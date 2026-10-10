@@ -98,6 +98,9 @@ const PAGE = `<!doctype html>
   li { margin: 6px 0; }
   .card { background: var(--raised); border-radius: 16px; padding: 16px 18px; }
   footer { margin-top: 36px; color: var(--dim); font-size: 13px; text-align: center; }
+  a { color: var(--teal); }
+  a:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+  .clone { display: block; background: none; padding: 0; overflow-wrap: anywhere; user-select: all; }
   code { background: var(--night); color: var(--blush); padding: 1px 6px; border-radius: 6px; font-size: 13px; }
 </style>
 </head>
@@ -114,20 +117,25 @@ const PAGE = `<!doctype html>
   <h2>Set it up</h2>
   <div class="card"><ol>
     <li>Open the zip and drag Neon Pup into Applications.</li>
-    <li>Open Neon Pup. Paste the links for your own server (<code>vless://</code> or <code>hysteria2://</code>), then press Save my roads.</li>
+    <li>Open Neon Pup. Paste the links for your own server (<code>vless://</code> or <code>hysteria2://</code>), then press Save my servers.</li>
     <li>Click the butterfly in the menu bar and press Wake me up. The first time, your Mac asks you to allow Neon Pup once.</li>
   </ol></div>
 
   <h2>What it does</h2>
   <div class="card"><ul>
     <li>Sends everything through your own server while it's on. WeChat and Alipay go direct.</li>
-    <li>Keeps Claude on your first road, so your account doesn't hop between countries.</li>
+    <li>Keeps Claude on the top server in your list, so your account doesn't hop between countries.</li>
     <li>China mode blocks the internet whenever the pup is asleep, so nothing slips out.</li>
-    <li>A hotel Wi-Fi button opens login pages without letting Claude out.</li>
+    <li>A hotel Wi-Fi button opens login pages while Claude stays on your server, and closes once you're online.</li>
   </ul></div>
 
   <h2>You need your own server</h2>
   <p>Neon Pup doesn't come with one. It works with a VLESS Reality, Hysteria2 or WebSocket server you or a friend run, and asks only for the share links.</p>
+
+  <h2>Source code</h2>
+  <p>Neon Pup is open source (MIT). Read the code, check how it handles your links, or build it yourself:
+    <a href="https://github.com/bysa-app/neon-pup">github.com/bysa-app/neon-pup</a></p>
+  <div class="card"><code class="clone">git clone https://github.com/bysa-app/neon-pup.git</code></div>
 
   <footer>Made by Holinic. Your links stay in your Mac's Keychain and never leave your Mac.</footer>
 </main>
