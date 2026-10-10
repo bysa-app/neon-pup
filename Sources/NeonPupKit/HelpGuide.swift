@@ -7,7 +7,29 @@ public enum HelpGuide {
     public enum Item: Sendable {
         case text(String)
         case step(String)
+        /// A command or link: shown in monospace with a Copy link.
+        case code(String)
     }
+
+    /// Made-up examples of each link type (the maintainer 2026-10-10). HelpGuideTests checks that each one imports.
+    public static let exampleLinks: [(label: String, link: String)] = [
+        ("Everyday server (VLESS Reality):",
+         "vless://11111111-2222-4333-8444-555555555555@203.0.113.10:443?encryption=none&security=reality&sni=www.apple.com&fp=chrome&pbk=fUP2s8T4LqCEhMDd7z8KNoqAYv3QBJ2rW0vmxyG8Zks&sid=ab12&type=tcp&flow=xtls-rprx-vision#Singapore"),
+        ("Turbo server (Hysteria2):",
+         "hy2://your-password@203.0.113.10:443?obfs=salamander&obfs-password=second-password&sni=www.bing.com#Singapore%20turbo"),
+        ("Backup tunnel (VLESS over WebSocket):",
+         "vless://11111111-2222-4333-8444-555555555555@proxy.example.com:443?encryption=none&security=tls&sni=proxy.example.com&type=ws&host=proxy.example.com&path=%2Fyour-path#Backup"),
+    ]
+
+    /// The health check page. Deliberately not a Claude page: if Neon Pup is not working, a Claude page
+    /// would see the China connection (the maintainer 2026-10-10).
+    public static let checkPage = "https://www.cloudflare.com/cdn-cgi/trace"
+    public static let checkCommand = "curl -s https://www.cloudflare.com/cdn-cgi/trace | grep loc"
+
+    /// Gets a stuck Mac back online without the app. Order matters: the helper re-seals whenever the engine
+    /// stops while the block is wanted, so the "wanted" flag goes before the engine, and the rules go last.
+    /// tools/emergency-drill.sh runs exactly this line.
+    public static let emergencyCommand = "pkill -x NeonPup; sudo rm -f /private/var/db/co.holinic.neonpup/killswitch-wanted; sudo pkill -x sing-box; sleep 2; sudo pfctl -a com.apple/co.holinic.neonpup -F all; defaults write co.holinic.neonpup chinaMode -bool false"
 
     public static let sections: [(title: String, items: [Item])] = [
         ("What Neon Pup does", [
@@ -31,10 +53,24 @@ public enum HelpGuide {
             .step("Press Save my servers. Your Mac's Keychain stores them, so you can delete the message or file you got them from."),
             .text("A server marked \"skips the safety check\" can't prove it is really your server. Use it only when nothing else works."),
         ]),
+        ("What server links look like", [
+            .text("Each link is one line. These examples use made-up values."),
+        ] + exampleLinks.flatMap { [Item.text($0.label), Item.code($0.link)] } + [
+            .text("The part after # is the name Neon Pup shows. A servers file is a plain text file (.txt) with one link on each line."),
+        ]),
         ("Turn it on and off", [
             .text("Wake me up connects. While it connects it says Sniffing for a server. Wait for Connected before you open anything."),
             .text("Let me nap disconnects, and your Mac goes back to its normal internet."),
             .text("Start when my Mac starts (gear menu) opens Neon Pup when you log in. It still waits for you to press Wake me up."),
+        ]),
+        ("Check that it works", [
+            .text("Don't test with a Claude page. If Neon Pup isn't working, that page would see your China connection."),
+            .step("With Neon Pup connected, open this page in your browser:"),
+            .code(checkPage),
+            .step("Find the line that starts with loc=. It shows the country your internet comes from, as a two-letter code: loc=SG is Singapore, loc=US is America."),
+            .step("If it shows loc=CN, Neon Pup isn't protecting you. Press Go offline (or Let me nap), don't open Claude, and see Get help from Claude below."),
+            .text("Or in Terminal:"),
+            .code(checkCommand),
         ]),
         ("Secure, Fast and Manual", [
             .text("Claude uses the top server in your list that works, in every mode. That covers claude.ai, the Claude desktop app and Claude Code. If that server stops working, Claude moves to the next one down."),
@@ -79,36 +115,50 @@ public enum HelpGuide {
             .step("In China mode you're offline until Neon Pup connects. Press Wake me up."),
             .step("Still offline? Turn China mode off in the gear menu, then press Let me nap."),
             .step("Can't see the butterfly? Open Neon Pup from Applications. On a MacBook with a notch, menu bar icons can hide behind it, so quit a few other menu bar apps."),
-            .step("Still blocked? Restart your Mac, open Neon Pup and turn China mode off."),
+            .step("Still blocked? Use Emergency below."),
+        ]),
+        ("Emergency: get your internet back", [
+            .text("Use this if nothing else works and your Mac stays offline."),
+            .step("Open Terminal (in Applications, then Utilities)."),
+            .step("Paste this line and press Return. Type your Mac password when asked. It doesn't show as you type."),
+            .code(emergencyCommand),
+            .step("This quits Neon Pup, lifts its block and turns China mode off. Your internet works again."),
+            .step("Still offline? Drag Neon Pup from Applications to the Trash and restart your Mac. Then download it again from neonpup.bysa.app."),
+            .text("If your clock shows the wrong time zone afterwards, set it in System Settings, General, Date & Time."),
         ]),
         ("Remove Neon Pup", [
             .step("Turn China mode off and press Let me nap."),
-            .step("Choose Quit in the gear menu, then drag Neon Pup from Applications to the Bin."),
+            .step("Choose Quit in the gear menu, then drag Neon Pup from Applications to the Trash."),
         ]),
-        ("Still stuck?", [
-            .text("Press Copy a report below and send it to whoever runs your servers. It lists your Mac, what Neon Pup is doing and how fast each server answers. Passwords and keys are left out."),
+        ("Get help from Claude", [
+            .text("Press Copy a report below. It copies a short description of Neon Pup for Claude, what Neon Pup is doing, how fast each server answers and its last 200 log lines. Server addresses, passwords and keys are hidden. The log can name sites that failed to load."),
+            .text("Paste it into a chat with Claude or another assistant and ask what's wrong. Only do that while Neon Pup says Connected, or from a device with its own safe connection, such as your phone. You can also send it to whoever runs your servers."),
         ]),
     ]
 
-    /// Section items as shown: steps numbered within their section, text as is.
-    public static func lines(_ items: [Item]) -> [String] {
+    /// Section items as shown: steps numbered within their section; `isCode` marks commands and links.
+    public static func lines(_ items: [Item]) -> [(text: String, isCode: Bool)] {
         var number = 0
         return items.map { item in
             switch item {
-            case .text(let t): return t
-            case .step(let t): number += 1; return "\(number). \(t)"
+            case .text(let t): return (t, false)
+            case .step(let t): number += 1; return ("\(number). \(t)", false)
+            case .code(let t): return (t, true)
             }
         }
     }
 
     /// Plain-text version for docs/GUIDE.md.
     public static var markdown: String {
-        sections.map { "## \($0.title)\n\n" + lines($0.items).joined(separator: "\n\n") }.joined(separator: "\n\n") + "\n"
+        sections.map { section in
+            "## \(section.title)\n\n" + lines(section.items)
+                .map { $0.isCode ? "```\n\($0.text)\n```" : $0.text }.joined(separator: "\n\n")
+        }.joined(separator: "\n\n") + "\n"
     }
 
     /// Every word of the guide, for checks.
     public static var allText: String {
-        sections.flatMap { [$0.title] + lines($0.items) }.joined(separator: " ")
+        sections.flatMap { [$0.title] + lines($0.items).map(\.text) }.joined(separator: " ")
     }
 }
 
@@ -129,9 +179,13 @@ struct GuideView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(section.title).font(Theme.rounded(15, .bold)).foregroundStyle(Theme.pink)
                         ForEach(Array(HelpGuide.lines(section.items).enumerated()), id: \.offset) { item in
-                            Text(item.element)
-                                .font(Theme.rounded(13)).foregroundStyle(Theme.text)
-                                .fixedSize(horizontal: false, vertical: true)
+                            if item.element.isCode {
+                                CodeLine(text: item.element.text)
+                            } else {
+                                Text(item.element.text)
+                                    .font(Theme.rounded(13)).foregroundStyle(Theme.text)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
                         }
                     }
                 }
@@ -154,6 +208,29 @@ struct GuideView: View {
             .padding(20)
             .frame(width: 440)
             .background(Theme.night)
+    }
+}
+
+/// A command or link in the guide: monospace, selectable, with a Copy link so nobody has to retype it.
+struct CodeLine: View {
+    let text: String
+    @State private var copied = false
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 4) {
+            Text(text)
+                .font(.system(size: 11, design: .monospaced)).foregroundStyle(Theme.blush)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            TextLink(title: copied ? "Copied" : "Copy") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(text, forType: .string)
+                copied = true
+                Task { try? await Task.sleep(nanoseconds: 2_000_000_000); copied = false }
+            }
+        }
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Theme.nightRaised))
     }
 }
 

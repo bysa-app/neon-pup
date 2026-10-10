@@ -11,6 +11,7 @@ struct RoadsSetupView: View {
     @State private var rejected: [(number: Int, message: String)] = []
     @State private var saved = false
     @State private var saving = false
+    @State private var savingWhileConnected = false
     /// A failed save says so instead of doing nothing (Fable review #2).
     @State private var saveFailed = false
     let close: () -> Void
@@ -23,6 +24,11 @@ struct RoadsSetupView: View {
 
     static let linksTip = "A server link starts with vless://, hy2:// or hysteria2://. You get it from whoever runs your server, for example your provider's website or a message from the person who set it up. Apps like Shadowrocket and Clash Verge can also share or export them."
     static let fileTip = "A plain text file (.txt) with one server link on each line, for example a file the person who runs your servers sent you."
+
+    static func savingMessage(connected: Bool) -> String {
+        connected ? "Saving and reconnecting to your servers. This can take up to 30 seconds, please wait."
+                  : "Saving your servers, please wait."
+    }
 
     static func label(_ kind: RoadKind) -> String {
         switch kind {
@@ -42,20 +48,19 @@ struct RoadsSetupView: View {
                 Text("Paste server links, one per line").font(Theme.rounded(12, .medium)).foregroundStyle(Theme.text)
                 InfoTip(text: Self.linksTip)
             }
-            HStack(alignment: .top, spacing: 10) {
-                TextEditor(text: $pasted)
-                    .font(.system(size: 11, design: .monospaced))
-                    .scrollContentBackground(.hidden)
-                    .padding(6)
-                    .frame(height: 70)
-                    .background(RoundedRectangle(cornerRadius: 10).fill(Theme.nightRaised))
-                TextLink(title: "Add these") { add(pasted); pasted = "" }
-                    .disabled(pasted.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    .padding(.top, 6)
-            }
+            TextEditor(text: $pasted)
+                .font(.system(size: 11, design: .monospaced))
+                .scrollContentBackground(.hidden)
+                .padding(6)
+                .frame(height: 70)
+                .background(RoundedRectangle(cornerRadius: 10).fill(Theme.nightRaised))
+            // the maintainer 2026-10-10: "Add these" under the box on the right, dimmed until something is pasted.
             HStack(spacing: 6) {
                 TextLink(title: "Import from file") { importFile() }
                 InfoTip(text: Self.fileTip)
+                Spacer()
+                TextLink(title: "Add these") { add(pasted); pasted = "" }
+                    .disabled(pasted.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             ForEach(Array(rejected.enumerated()), id: \.offset) { item in
                 // Never echo the link: its start holds the user id or password (review).
@@ -70,13 +75,14 @@ struct RoadsSetupView: View {
                     .font(Theme.rounded(12, .medium)).foregroundStyle(Theme.text)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            GlowButton(title: saved ? "Saved" : "Save my servers", wakes: true) {
+            GlowButton(title: saving ? "Saving..." : saved ? "Saved" : "Save my servers", wakes: true) {
                 Task {
                     let named = draft.map { road -> RoadSpec in
                         var r = road
                         r.name = ShareLinkParser.finishTypedName(r.name)
                         return r
                     }
+                    savingWhileConnected = model.isOn
                     saving = true
                     saved = await model.setRoads(named)
                     saving = false
@@ -85,6 +91,16 @@ struct RoadsSetupView: View {
                 }
             }
             .disabled(draft.isEmpty || saving)
+            // A save while connected restarts the engine on the new servers, which takes several seconds
+            // (the maintainer 2026-10-10: it looked broken without a word).
+            if saving {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text(Self.savingMessage(connected: savingWhileConnected))
+                        .font(Theme.rounded(12)).foregroundStyle(Theme.text)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
             if saveFailed {
                 Text("I couldn't save your servers. Try again")
                     .font(Theme.rounded(11)).foregroundStyle(Theme.blush)

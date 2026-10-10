@@ -106,6 +106,10 @@ public final class HelperClient: HelperControlling {
         await call("could not reach the helper") { h, done in h.killSwitchReport { done($0) } }
     }
 
+    public func recentLog() async -> String {
+        await call("") { h, done in h.recentLog { done($0) } }
+    }
+
     public func stopNow(keepKillSwitch: Bool) {
         let c = connection ?? {
             let c = NSXPCConnection(machServiceName: HelperConstants.machService, options: .privileged)

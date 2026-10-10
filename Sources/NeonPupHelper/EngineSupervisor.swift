@@ -12,6 +12,8 @@ final class EngineSupervisor {
     private var restarts = 0
     private var lastError: String?
     let stateDir = HelperPaths.state
+    /// The engine's recent output, for "Copy a report" (2026-10-10). Memory only, never written to disk.
+    private var log = LogRing()
 
     /// The app bundle the helper was launched from (user-writable when it sits in /Applications).
     private var appBundle: URL {
@@ -147,9 +149,12 @@ final class EngineSupervisor {
             let data = handle.availableData
             // EOF: without clearing the handler Foundation keeps calling it and spins a core (final review I-3).
             if data.isEmpty { handle.readabilityHandler = nil; return }
-            guard let text = String(data: data, encoding: .utf8),
-                  let line = LogLine.lastError(in: text) else { return }
-            self?.queue.async { self?.lastError = line }
+            guard let text = String(data: data, encoding: .utf8) else { return }
+            let line = LogLine.lastError(in: text)
+            self?.queue.async {
+                self?.log.append(text)
+                if let line { self?.lastError = line }
+            }
         }
         p.terminationHandler = { [weak self] proc in
             self?.queue.async { self?.handleExit(proc, file) }
@@ -234,6 +239,8 @@ final class EngineSupervisor {
     }
 
     func killSwitchReport() -> String { queue.sync { killSwitch.report() } }
+
+    func recentLog() -> String { queue.sync { log.text } }
 
     func status() -> (Bool, String?) {
         queue.sync { (process?.isRunning ?? false, lastError) }

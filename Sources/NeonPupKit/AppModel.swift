@@ -484,7 +484,8 @@ public final class AppModel: ObservableObject {
                                     macOSVersion: "\(info.majorVersion).\(info.minorVersion).\(info.patchVersion)",
                                     cpu: cpu, phase: "\(phase)", mode: mode.rawValue + (chinaMode ? ", china mode" : ""), pickedRoad: pickedRoad,
                                     roadDelays: delays, lastError: lastError, helper: helperState)
-        return Diagnostics.report(facts, roads: roads, redacting: Diagnostics.secrets(from: roadSpecs))
+        let log = helper.readiness() == .ready ? await helper.recentLog() : ""
+        return Diagnostics.report(facts, roads: roads, log: log, redacting: Diagnostics.secrets(from: roadSpecs))
     }
 
     /// Gallery and previews only: a model frozen in a given state.
@@ -525,4 +526,5 @@ final class PreviewHelper: HelperControlling {
     func restoreTimeZone() async {}
     func stopNow(keepKillSwitch: Bool) {}
     func setKillSwitch(_ on: Bool) async -> String? { nil }
+    func recentLog() async -> String { "" }
 }

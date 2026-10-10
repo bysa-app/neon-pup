@@ -53,6 +53,8 @@ final class FakeHelper: HelperControlling {
         calls.append("stopNow"); running = false
         if !keepKillSwitch { calls.append("killSwitch(off)") }
     }
+    var log = ""
+    func recentLog() async -> String { log }
     var killSwitchError: String?
     var duringKillSwitch: (@MainActor () async -> Void)?
     func setKillSwitch(_ on: Bool) async -> String? {

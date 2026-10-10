@@ -36,6 +36,30 @@ A server link starts with vless://, hy2:// or hysteria2://. You get it from whoe
 
 A server marked "skips the safety check" can't prove it is really your server. Use it only when nothing else works.
 
+## What server links look like
+
+Each link is one line. These examples use made-up values.
+
+Everyday server (VLESS Reality):
+
+```
+vless://11111111-2222-4333-8444-555555555555@203.0.113.10:443?encryption=none&security=reality&sni=www.apple.com&fp=chrome&pbk=fUP2s8T4LqCEhMDd7z8KNoqAYv3QBJ2rW0vmxyG8Zks&sid=ab12&type=tcp&flow=xtls-rprx-vision#Singapore
+```
+
+Turbo server (Hysteria2):
+
+```
+hy2://your-password@203.0.113.10:443?obfs=salamander&obfs-password=second-password&sni=www.bing.com#Singapore%20turbo
+```
+
+Backup tunnel (VLESS over WebSocket):
+
+```
+vless://11111111-2222-4333-8444-555555555555@proxy.example.com:443?encryption=none&security=tls&sni=proxy.example.com&type=ws&host=proxy.example.com&path=%2Fyour-path#Backup
+```
+
+The part after # is the name Neon Pup shows. A servers file is a plain text file (.txt) with one link on each line.
+
 ## Turn it on and off
 
 Wake me up connects. While it connects it says Sniffing for a server. Wait for Connected before you open anything.
@@ -43,6 +67,26 @@ Wake me up connects. While it connects it says Sniffing for a server. Wait for C
 Let me nap disconnects, and your Mac goes back to its normal internet.
 
 Start when my Mac starts (gear menu) opens Neon Pup when you log in. It still waits for you to press Wake me up.
+
+## Check that it works
+
+Don't test with a Claude page. If Neon Pup isn't working, that page would see your China connection.
+
+1. With Neon Pup connected, open this page in your browser:
+
+```
+https://www.cloudflare.com/cdn-cgi/trace
+```
+
+2. Find the line that starts with loc=. It shows the country your internet comes from, as a two-letter code: loc=SG is Singapore, loc=US is America.
+
+3. If it shows loc=CN, Neon Pup isn't protecting you. Press Go offline (or Let me nap), don't open Claude, and see Get help from Claude below.
+
+Or in Terminal:
+
+```
+curl -s https://www.cloudflare.com/cdn-cgi/trace | grep loc
+```
 
 ## Secure, Fast and Manual
 
@@ -116,14 +160,34 @@ Neon Pup won't connect while another VPN app is on, such as Clash Verge or a wor
 
 3. Can't see the butterfly? Open Neon Pup from Applications. On a MacBook with a notch, menu bar icons can hide behind it, so quit a few other menu bar apps.
 
-4. Still blocked? Restart your Mac, open Neon Pup and turn China mode off.
+4. Still blocked? Use Emergency below.
+
+## Emergency: get your internet back
+
+Use this if nothing else works and your Mac stays offline.
+
+1. Open Terminal (in Applications, then Utilities).
+
+2. Paste this line and press Return. Type your Mac password when asked. It doesn't show as you type.
+
+```
+pkill -x NeonPup; sudo rm -f /private/var/db/co.holinic.neonpup/killswitch-wanted; sudo pkill -x sing-box; sleep 2; sudo pfctl -a com.apple/co.holinic.neonpup -F all; defaults write co.holinic.neonpup chinaMode -bool false
+```
+
+3. This quits Neon Pup, lifts its block and turns China mode off. Your internet works again.
+
+4. Still offline? Drag Neon Pup from Applications to the Trash and restart your Mac. Then download it again from neonpup.bysa.app.
+
+If your clock shows the wrong time zone afterwards, set it in System Settings, General, Date & Time.
 
 ## Remove Neon Pup
 
 1. Turn China mode off and press Let me nap.
 
-2. Choose Quit in the gear menu, then drag Neon Pup from Applications to the Bin.
+2. Choose Quit in the gear menu, then drag Neon Pup from Applications to the Trash.
 
-## Still stuck?
+## Get help from Claude
 
-Press Copy a report below and send it to whoever runs your servers. It lists your Mac, what Neon Pup is doing and how fast each server answers. Passwords and keys are left out.
+Press Copy a report below. It copies a short description of Neon Pup for Claude, what Neon Pup is doing, how fast each server answers and its last 200 log lines. Server addresses, passwords and keys are hidden. The log can name sites that failed to load.
+
+Paste it into a chat with Claude or another assistant and ask what's wrong. Only do that while Neon Pup says Connected, or from a device with its own safe connection, such as your phone. You can also send it to whoever runs your servers.

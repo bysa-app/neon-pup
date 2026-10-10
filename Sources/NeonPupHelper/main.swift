@@ -18,6 +18,7 @@ final class HelperService: NSObject, NeonPupHelperProtocol {
     func restoreTimeZone(withReply reply: @escaping () -> Void) { timeZone.restore(); reply() }
     func killSwitchReport(withReply reply: @escaping (String) -> Void) { reply(engine.killSwitchReport()) }
     func setKillSwitch(_ on: Bool, withReply reply: @escaping (String?) -> Void) { reply(engine.setKillSwitch(on)) }
+    func recentLog(withReply reply: @escaping (String) -> Void) { reply(engine.recentLog()) }
     func version(withReply reply: @escaping (String) -> Void) { reply(HelperConstants.version) }
 }
 

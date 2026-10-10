@@ -18,6 +18,8 @@ public protocol HelperControlling: AnyObject {
     func stopNow(keepKillSwitch: Bool)
     /// Kill switch on (or refreshed) / off. nil = done.
     func setKillSwitch(_ on: Bool) async -> String?
+    /// The engine's recent log, for the help report. "" when unavailable.
+    func recentLog() async -> String
 }
 
 public protocol EngineControlling: Sendable {
