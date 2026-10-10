@@ -1,0 +1,10 @@
+name = "neon-pup-download"
+main = "worker.js"
+compatibility_date = "2026-09-01"
+workers_dev = false
+
+routes = [{ pattern = "neonpup.bysa.app", custom_domain = true }]
+
+[[r2_buckets]]
+binding = "FILES"
+bucket_name = "neon-pup-downloads"
