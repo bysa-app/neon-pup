@@ -32,6 +32,24 @@ Developers: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) explains the design and
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the details and the open questions.
 
+## Known issues: when your real IP can show
+
+We know about these and have not fixed them yet. In each case traffic leaves the Mac directly, from your real IP
+address, for a short time. Measured on a MacBook Air with macOS 26.2 and SFM 1.14.3 in October 2026.
+
+| When | What happens | How long |
+|---|---|---|
+| The Mac restarts | Wi-Fi joins about 10 seconds after boot, before anyone logs in, and the tunnel is not running yet. macOS's own services (iCloud, updates, the clock) go online directly until Neon Pup starts at login and, in China mode, turns Wi-Fi off. | About 90 seconds before login, then 2 to 3 seconds after |
+| First Wake me up after a restart | The tunnel can't start until Wi-Fi has joined a network, so Wi-Fi has to come on first. | 2 to 5 seconds |
+| The tunnel crashes | macOS keeps traffic blocked for about 6 seconds (SFM's "include all networks"), then drops the dead tunnel and lifts the block before Neon Pup can restart it. | 1 to 2 seconds |
+
+Turning Wi-Fi off at shutdown did not help: macOS announces the restart, but Wi-Fi is back on at the next boot.
+A fix most likely needs a rule that only lets traffic out toward your servers while the tunnel is down, without
+ever locking a Mac out of the internet.
+
+If you can close any of these, please open a pull request. The measurements and how we took them are in
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) ("Measured limits"), and `tools/sfm-test.sh` runs the live checks.
+
 ## Build it yourself
 
 You need Xcode's command line tools (Swift 5.9 or newer) and, to run the helper, an Apple Developer ID.
