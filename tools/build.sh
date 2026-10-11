@@ -16,6 +16,9 @@ BIN=$(swift build -c release --arch arm64 --arch x86_64 "${MAP[@]}" --show-bin-p
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/Art" "$APP/Contents/Library/LaunchDaemons"
 cp "$BIN/NeonPup" "$BIN/NeonPupHelper" "$APP/Contents/MacOS/"
+# The linker's debug map lists every object file by absolute path (the builder's home folder, release scan
+# 2026-10-12); the release app needs no debug symbols.
+strip -S "$APP/Contents/MacOS/NeonPup" "$APP/Contents/MacOS/NeonPupHelper"
 cp build/cache/sing-box-universal "$APP/Contents/Resources/sing-box"
 # No server details in the app (own roads, 2026-10-10): people add their roads in the app.
 # China IP and domain lists ("China sites go direct"). Uses the router repo's copies when present,

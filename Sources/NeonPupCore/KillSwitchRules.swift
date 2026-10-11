@@ -24,3 +24,27 @@ public enum KillSwitchRules {
             .allSatisfy { $0.isEmpty || $0.contains("ALTQ") }
     }
 }
+
+/// Whether a block left on disk is applied when the helper starts (Codex review 2026-10-10, bricking #1).
+/// The helper starts at boot and after a crash. Only China mode keeps the block across a restart; outside
+/// China mode a block from an earlier boot is dropped, so a power cut while connected cannot leave a Mac
+/// offline with no app running. A helper crash within the same boot keeps the block (nothing leaks between
+/// the crash and the app's next check).
+public enum KillSwitchBootPolicy {
+    public static func keepAtLaunch(wanted: Bool, chinaMode: Bool, recordedBoot: String?, currentBoot: String?) -> Bool {
+        guard wanted else { return false }
+        if chinaMode { return true }
+        // An unknown boot on either side is never "the same boot" (Codex boot review #6).
+        guard let recordedBoot, let currentBoot, Int(recordedBoot) != nil else { return false }
+        return recordedBoot == currentBoot
+    }
+
+    /// The kernel's boot time in whole seconds, or nil if it can't be read. Same for every helper launch within
+    /// one boot (sleep and clock changes don't alter it), new after a restart.
+    public static func currentBoot() -> String? {
+        var tv = timeval()
+        var size = MemoryLayout<timeval>.size
+        guard sysctlbyname("kern.boottime", &tv, &size, nil, 0) == 0, tv.tv_sec > 0 else { return nil }
+        return String(tv.tv_sec)
+    }
+}

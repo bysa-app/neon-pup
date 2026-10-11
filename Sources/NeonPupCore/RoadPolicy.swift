@@ -27,8 +27,12 @@ public struct RoadSelection: Equatable, Sendable {
 
 public enum RoadPolicy {
     /// `order` is the person's list (first = where Claude goes while it works). nil when no road answers.
-    public static func selection(mode: RoadMode, picked: String?, alive: Set<String>, order: [String]) -> RoadSelection? {
-        guard let first = order.first(where: alive.contains) else { return nil }
+    /// `current` is the server Claude is on now: it stays while it works, so Claude doesn't snap back to the top
+    /// of the list and lose its connections (Codex full review 2026-10-10). Otherwise the first working one.
+    public static func selection(mode: RoadMode, picked: String?, alive: Set<String>, order: [String],
+                                 current: String? = nil) -> RoadSelection? {
+        guard let top = order.first(where: alive.contains) else { return nil }
+        let first = current.flatMap { order.contains($0) && alive.contains($0) ? $0 : nil } ?? top
         switch mode {
         case .secure:
             return RoadSelection(choice: first, claude: first, pickedRoadDown: false)

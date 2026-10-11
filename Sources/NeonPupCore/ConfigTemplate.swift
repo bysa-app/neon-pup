@@ -1,13 +1,19 @@
 import Foundation
+import CryptoKit
 
 public struct RuntimeOptions: Sendable {
+    /// Who runs the engine: Neon Pup's own helper (plain TUN, rules from the bundle) or SFM, sing-box's
+    /// NetworkExtension app, which owns the tunnel and system DNS (2026-10-10, DNS fix for the China trip).
+    public enum Platform: Sendable { case helper, sfm }
     public let resourcesPath: String
     public let apiPort: Int
     public let apiSecret: String
-    public init(resourcesPath: String, apiPort: Int, apiSecret: String) {
+    public let platform: Platform
+    public init(resourcesPath: String, apiPort: Int, apiSecret: String, platform: Platform = .helper) {
         self.resourcesPath = resourcesPath
         self.apiPort = apiPort
         self.apiSecret = apiSecret
+        self.platform = platform
     }
 }
 
@@ -44,6 +50,8 @@ public enum ConfigTemplate {
              "interval": "2m", "tolerance": 80],
         ]
         for (road, tag) in zip(roads, tags) { outbounds.append(outbound(road, tag: tag)) }
+        // Never used for traffic: its tag names the server list, so Neon Pup can check what SFM runs.
+        if options.platform == .sfm { outbounds.append(["tag": fingerprintTag(roads: roads), "type": "direct"]) }
         outbounds.append(["tag": "direct", "type": "direct", "domain_resolver": "local-dns"])
 
         let resources = options.resourcesPath
@@ -58,15 +66,11 @@ public enum ConfigTemplate {
                 "rules": [
                     ["domain_suffix": claudeDomains, "action": "route", "server": "proxy-dns"],
                     ["clash_mode": "Direct", "action": "route", "server": "hotel-dns"],
-                    ["rule_set": "geosite-cn", "action": "route", "server": "local-dns"],
+                    ["rule_set": "geosite-cn", "clash_mode": "Rule", "action": "route", "server": "local-dns"],
                 ],
                 "final": "proxy-dns",
             ],
-            "inbounds": [[
-                "tag": "tun-in", "type": "tun", "interface_name": tunnelName,
-                "address": ["172.19.0.1/30", "fdfe:dcba:9876::1/126"],
-                "auto_route": true, "strict_route": true, "stack": "mixed",
-            ]],
+            "inbounds": [tunInbound(options.platform)],
             "outbounds": outbounds,
             "route": [
                 "default_domain_resolver": "local-dns",
@@ -76,23 +80,63 @@ public enum ConfigTemplate {
                     ["domain_suffix": claudeDomains, "action": "route", "outbound": "claude"],
                     ["clash_mode": "Direct", "action": "route", "outbound": "direct"],
                     ["ip_is_private": true, "action": "route", "outbound": "direct"],
-                    ["rule_set": "geoip-cn", "action": "route", "outbound": "direct"],
-                    ["rule_set": "geosite-cn", "action": "route", "outbound": "direct"],
+                    ["rule_set": "geoip-cn", "clash_mode": "Rule", "action": "route", "outbound": "direct"],
+                    ["rule_set": "geosite-cn", "clash_mode": "Rule", "action": "route", "outbound": "direct"],
                 ],
-                "rule_set": [
-                    ["tag": "geoip-cn", "type": "local", "format": "binary", "path": resources + "/geoip-cn.srs"],
-                    ["tag": "geosite-cn", "type": "local", "format": "binary", "path": resources + "/geosite-cn.srs"],
-                ],
+                "rule_set": ruleSets(options.platform, resources: resources),
                 "final": "choice",
                 "auto_detect_interface": true,
             ],
-            "experimental": ["clash_api": [
-                "external_controller": "127.0.0.1:\(options.apiPort)",
-                "secret": options.apiSecret,
-                "default_mode": "Rule",
-            ]],
+            "experimental": experimental(options),
         ]
         return try JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys])
+    }
+
+    /// "np-" plus the first 12 hex digits of SHA-256 over the server list (order, names and fields).
+    public static func fingerprintTag(roads: [RoadSpec]) -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let data = (try? encoder.encode(roads)) ?? Data()
+        let hex = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        return "np-" + hex.prefix(12)
+    }
+
+    static func tunInbound(_ platform: RuntimeOptions.Platform) -> [String: Any] {
+        var tun: [String: Any] = ["tag": "tun-in", "type": "tun", "address": ["172.19.0.1/30", "fdfe:dcba:9876::1/126"],
+                                  "auto_route": true, "strict_route": true]
+        switch platform {
+        case .helper:
+            tun["interface_name"] = tunnelName; tun["stack"] = "mixed"
+        case .sfm:
+            // Measured on SFM 1.14.3 (2026-10-10): macOS names the interface; without auto_route NetworkExtension
+            // installs no routes; the default stack fails ("bind: can't assign requested address"), gvisor works.
+            tun["stack"] = "gvisor"
+        }
+        return tun
+    }
+
+    /// SFM can't read Neon Pup's bundle, so it downloads sing-box's published lists through Claude's roads
+    /// (never direct) and keeps them in its cache.
+    static func ruleSets(_ platform: RuntimeOptions.Platform, resources: String) -> [[String: Any]] {
+        switch platform {
+        case .helper:
+            return [["tag": "geoip-cn", "type": "local", "format": "binary", "path": resources + "/geoip-cn.srs"],
+                    ["tag": "geosite-cn", "type": "local", "format": "binary", "path": resources + "/geosite-cn.srs"]]
+        case .sfm:
+            let base = "https://raw.githubusercontent.com/SagerNet"
+            let client: [String: Any] = ["detour": "claude"]
+            return [["tag": "geoip-cn", "type": "remote", "format": "binary", "url": base + "/sing-geoip/rule-set/geoip-cn.srs",
+                     "http_client": client, "update_interval": "7d"],
+                    ["tag": "geosite-cn", "type": "remote", "format": "binary", "url": base + "/sing-geosite/rule-set/geosite-cn.srs",
+                     "http_client": client, "update_interval": "7d"]]
+        }
+    }
+
+    static func experimental(_ options: RuntimeOptions) -> [String: Any] {
+        var e: [String: Any] = ["clash_api": ["external_controller": "127.0.0.1:\(options.apiPort)",
+                                              "secret": options.apiSecret, "default_mode": "Rule"]]
+        if options.platform == .sfm { e["cache_file"] = ["enabled": true] }
+        return e
     }
 
     static func outbound(_ r: RoadSpec, tag: String) -> [String: Any] {

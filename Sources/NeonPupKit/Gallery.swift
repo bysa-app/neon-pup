@@ -56,6 +56,35 @@ public enum Gallery {
                 out.append(url)
             }
         }
+        // Setup wizard, every page (bridge answers nothing: renders only, no system calls take effect).
+        let previewDefaults = UserDefaults(suiteName: "gallery-wizard") ?? .standard
+        for step in SFMSetup.Step.allCases {
+            let setup = SFMSetup(bridge: SFMBridge(run: { _, _ in "" }), defaults: previewDefaults)
+            setup.step = step
+            let model = AppModel.preview(phase: .off)
+            let renderer = ImageRenderer(content: SetupWizardView(setup: setup, model: model, close: {}))
+            renderer.scale = 2
+            if let tiff = renderer.nsImage?.tiffRepresentation,
+               let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+                let url = dir.appendingPathComponent(String(format: "20-wizard-%02d.png", step.rawValue))
+                try? png.write(to: url)
+                out.append(url)
+            }
+        }
+        // The install page with its "Why do I need SFM?" section opened.
+        do {
+            let setup = SFMSetup(bridge: SFMBridge(run: { _, _ in "" }), defaults: previewDefaults)
+            setup.step = .install
+            let renderer = ImageRenderer(content: SetupWizardView(setup: setup, model: AppModel.preview(phase: .off),
+                                                                  close: {}, whyOpen: true))
+            renderer.scale = 2
+            if let tiff = renderer.nsImage?.tiffRepresentation,
+               let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+                let url = dir.appendingPathComponent("20-wizard-02-why-open.png")
+                try? png.write(to: url)
+                out.append(url)
+            }
+        }
         for (name, phase) in [("menubar-off", Phase.off), ("menubar-on", .connected), ("menubar-busy", .connecting)] {
             let renderer = ImageRenderer(content: MenuBarIcon(phase: phase).frame(width: 18, height: 18).padding(4).background(Color.gray.opacity(0.2)))
             renderer.scale = 4

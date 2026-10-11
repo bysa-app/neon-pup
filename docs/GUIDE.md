@@ -2,9 +2,11 @@
 
 ## What Neon Pup does
 
-Neon Pup sends all of your Mac's internet through servers outside China, so blocked sites like Google, Instagram, WhatsApp and Claude work. While it is connected, Claude only sees your server's location.
+Neon Pup sends all of your Mac's internet through your own servers outside China, so blocked sites like Google, Instagram, WhatsApp and Claude work. While it is connected, Claude only sees your server's location.
 
 It lives in the menu bar as a butterfly next to the clock. Click the butterfly to open it.
+
+Neon Pup works together with a free app called SFM, made by the people behind the engine Neon Pup uses. SFM carries your internet in the background. You only use Neon Pup, but keep SFM installed.
 
 You need a Mac with macOS 13 or newer and at least one server link. Neon Pup comes without servers. The person or company that runs your servers gives you the links.
 
@@ -12,13 +14,11 @@ You need a Mac with macOS 13 or newer and at least one server link. Neon Pup com
 
 1. Download Neon-Pup.zip from neonpup.bysa.app, open it and drag Neon Pup into Applications.
 
-2. Open Neon Pup from Applications. The butterfly appears in the menu bar and the Your servers window opens.
+2. Open Neon Pup from Applications. A setup window opens and walks you through every step, one at a time. It takes about 5 minutes and asks for your Mac password once or twice.
 
-3. Add your servers (see the next section) and press Save my servers.
+3. Follow the steps until the window says All set.
 
-4. Click the butterfly and press Wake me up. The first time, macOS asks you to allow Neon Pup. Switch it on in System Settings, under General, Login Items & Extensions, then press Wake me up again.
-
-5. When it says Connected, it works. Press Let me nap until you need it.
+If you close the setup window early, click the butterfly and press Continue setup.
 
 ## Add your servers
 
@@ -32,7 +32,9 @@ A server link starts with vless://, hy2:// or hysteria2://. You get it from whoe
 
 4. Rename the servers if you like, and use the arrows to put them in order. You can add up to 8.
 
-5. Press Save my servers. Your Mac's Keychain stores them, so you can delete the message or file you got them from.
+5. Press Save my servers. Your Mac's Keychain keeps them, and SFM keeps its own copy to run them.
+
+After you change your servers, Neon Pup asks you to open SFM and press its refresh button once. Until then it keeps using your old servers.
 
 A server marked "skips the safety check" can't prove it is really your server. Use it only when nothing else works.
 
@@ -100,19 +102,27 @@ Manual: everything except Claude uses the server you pick. Hearts show how fast 
 
 Put the server you want Claude on at the top of the list. A server near China, such as Singapore, is usually fastest.
 
+## Chinese sites
+
+Sites in China, like WeChat, Alipay and Baidu, normally go straight out. They are faster that way and don't need your servers.
+
+To send them through your servers too, open the gear menu and turn on Send Chinese sites through my servers. Chinese sites then see your server's location instead of yours, and they may be slower.
+
 ## If the connection drops
 
-While Neon Pup is connected, nothing leaves your Mac except through your servers. If the connection drops, Neon Pup blocks the internet instead of letting apps fall back to the local connection, and says "I paused the internet to keep you safe".
+While Neon Pup is connected, SFM keeps every app on your Mac inside the tunnel. If the connection drops, Neon Pup says "The connection dropped".
 
-Press Wake me up to try again. Outside China mode you can also press Back to normal internet.
+Neon Pup reconnects by itself, up to three times in a row. If it still can't, press Wake me up to try again. Until then your Mac uses its normal internet (in China mode, Wi-Fi stays off).
 
 ## China mode
 
 Turn China mode on (gear menu) before you join any Wi-Fi in China. Turn it off when you leave.
 
-With China mode on, your Mac has no internet at all unless Neon Pup is connected. Nothing can slip out over the local connection while Neon Pup starts, after a crash or after a restart. The big button says Go offline instead of Let me nap, because disconnecting leaves you offline.
+With China mode on, Neon Pup keeps the connection up and reconnects by itself if it drops. The big button says Go offline instead of Let me nap: it turns Wi-Fi off, so nothing goes online. Wake me up turns Wi-Fi back on and connects.
 
-With China mode off, Let me nap gives you your normal internet back. Use that outside China.
+Quitting Neon Pup in China mode leaves the connection running, so you stay protected. To stop it completely, turn China mode off first.
+
+In China, also turn on Start when my Mac starts in the gear menu.
 
 ## Time zone
 
@@ -126,21 +136,25 @@ Some networks make you log in on a web page first. Normally your Mac shows that 
 
 2. If Neon Pup shows Securely open public Wi-Fi login, press it. A browser tab opens and the network shows its login page there.
 
-3. Log in. Neon Pup closes the login window by itself as soon as your servers answer. You can also press Done.
+3. Log in. Neon Pup closes the login window by itself as soon as your servers answer, and after 5 minutes at the latest. You can also press Done.
 
-For up to 5 minutes your browser uses the local connection so the login page can load. Claude stays on your servers the whole time. Don't open other sites until it says Connected again.
+While the login window is open, your browser uses the local connection so the login page can load. Claude stays on your servers the whole time. Don't open other sites until it says Connected again.
 
 In China mode the Mac's own login pop-up can't load. Close it and use the button instead.
 
 ## Other VPN apps
 
-Neon Pup won't connect while another VPN app is on, such as Clash Verge or a work VPN. Quit that app, then press Wake me up.
+Neon Pup won't connect while another VPN app is on, such as Clash Verge or a work VPN. Quit that app, then press Wake me up. SFM is part of Neon Pup and doesn't count.
 
 ## What the messages mean
+
+"Finish setting up first": press Continue setup and follow the steps.
 
 "I need a one-time OK in System Settings": press Open System Settings, switch Neon Pup on under Login Items & Extensions, then press Wake me up.
 
 "Add your servers first": open the gear menu, choose Your servers and add at least one.
+
+"Your server list changed. Press refresh in SFM": press Open SFM, then the round arrow next to Neon Pup. You stay protected meanwhile, on your old servers.
 
 "Another app is changing your internet": quit your other VPN app.
 
@@ -150,33 +164,41 @@ Neon Pup won't connect while another VPN app is on, such as Clash Verge or a wor
 
 "This server is blocked here, trying another" (Manual): pick a different server.
 
+"The connection dropped": press Wake me up. In China mode Neon Pup does this by itself.
+
 "I couldn't block the internet": the safety block failed. Turn Wi-Fi off so nothing leaks, then copy a report (below) and send it to whoever runs your servers.
 
 ## Stuck offline?
 
-1. In China mode you're offline until Neon Pup connects. Press Wake me up.
+1. In China mode, Go offline turns Wi-Fi off. Press Wake me up to turn it back on and connect.
 
-2. Still offline? Turn China mode off in the gear menu, then press Let me nap.
+2. Go offline only turns off Wi-Fi. If your Mac is on a network cable, unplug it too.
 
-3. Can't see the butterfly? Open Neon Pup from Applications. On a MacBook with a notch, menu bar icons can hide behind it, so quit a few other menu bar apps.
+3. Still offline? Turn China mode off in the gear menu, then press Let me nap.
 
-4. Still blocked? Use Emergency below.
+4. Can't see the butterfly? Open Neon Pup from Applications. On a MacBook with a notch, menu bar icons can hide behind it, so quit a few other menu bar apps.
+
+5. Still blocked? Use Emergency below.
 
 ## Emergency: get your internet back
 
 Use this if nothing else works and your Mac stays offline.
 
-1. Open Terminal (in Applications, then Utilities).
+1. Open System Settings, then VPN, and turn off SFM.
 
-2. Paste this line and press Return. Type your Mac password when asked. It doesn't show as you type.
+2. Turn Wi-Fi on from the Wi-Fi menu at the top of the screen.
+
+3. Still offline? Open Terminal (in Applications, then Utilities).
+
+4. Paste this line and press Return. Type your Mac password when asked. It doesn't show as you type.
 
 ```
-pkill -x NeonPup; sudo rm -f /private/var/db/co.holinic.neonpup/killswitch-wanted; sudo pkill -x sing-box; sleep 2; sudo pfctl -a com.apple/co.holinic.neonpup -F all; defaults write co.holinic.neonpup chinaMode -bool false
+pkill -x NeonPup; scutil --nc stop SFM; sudo rm -f /private/var/db/co.holinic.neonpup/killswitch-wanted /private/var/db/co.holinic.neonpup/killswitch-china; sudo pkill -x sing-box; sleep 2; sudo pfctl -a com.apple/co.holinic.neonpup -F all; defaults write co.holinic.neonpup chinaMode -bool false
 ```
 
-3. This quits Neon Pup, lifts its block and turns China mode off. Your internet works again.
+5. This quits Neon Pup, stops SFM, lifts any block Neon Pup set and turns China mode off. Your internet works again.
 
-4. Still offline? Drag Neon Pup from Applications to the Trash and restart your Mac. Then download it again from neonpup.bysa.app.
+6. Still offline? Restart your Mac.
 
 If your clock shows the wrong time zone afterwards, set it in System Settings, General, Date & Time.
 
@@ -186,8 +208,22 @@ If your clock shows the wrong time zone afterwards, set it in System Settings, G
 
 2. Choose Quit in the gear menu, then drag Neon Pup from Applications to the Trash.
 
+3. To remove SFM too: open System Settings, then VPN, and remove SFM. Then drag SFM from Applications to the Trash.
+
+## Good to know
+
+If you change your servers, Neon Pup asks you to open SFM and press its refresh button once. Until then it keeps using your old servers.
+
+If SFM offers an update, say no. Neon Pup is tested with the version it installed.
+
+Hotel or airport Wi-Fi with a login page: use Securely open public Wi-Fi login in Neon Pup.
+
+In China mode, Go offline turns Wi-Fi off. Wake me up turns it back on.
+
+Your phone needs its own app. Neon Pup is for this Mac only.
+
 ## Get help from Claude
 
-Press Copy a report below. It copies a short description of Neon Pup for Claude, what Neon Pup is doing, how fast each server answers and its last 200 log lines. Server addresses, passwords and keys are hidden. The log can name sites that failed to load.
+Press Copy a report below. It copies a short description of Neon Pup for Claude, what Neon Pup is doing and how fast each server answers. Server addresses, passwords and keys are hidden. SFM shows more detail in its own window, under Logs.
 
 Paste it into a chat with Claude or another assistant and ask what's wrong. Only do that while Neon Pup says Connected, or from a device with its own safe connection, such as your phone. You can also send it to whoever runs your servers.

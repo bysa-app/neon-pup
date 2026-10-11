@@ -41,7 +41,7 @@ final class AppReviewRound2Tests: XCTestCase {
         let m = model(h, e, defaults: d)
         await m.wake()
         await m.startHotelLogin()
-        XCTAssertEqual(e.modes, ["Direct"])
+        XCTAssertEqual(e.modes.last, "Direct")
         let fresh = model(h, e, defaults: d)
         await fresh.reattach()
         XCTAssertEqual(e.modes.last, "Rule")
@@ -67,6 +67,8 @@ final class AppReviewRound2Tests: XCTestCase {
         await m.wake()
         await m.startHotelLogin()
         e.refusedModes = ["Rule"]
+        // A restarted engine starts in Rule; the fake keeps one object, so report what the new engine would.
+        e.reportedMode = "Rule"
         await m.endHotelLogin()
         XCTAssertEqual(h.startCount, 2)
         XCTAssertEqual(m.phase, .connected)
@@ -182,5 +184,53 @@ final class HotelAutoCloseTests: XCTestCase {
         await m.hotelLoginTick()
         XCTAssertEqual(e.modes.last, "Rule")
         XCTAssertEqual(m.phase, .connected)
+    }
+}
+
+/// Codex review 2026-10-10 (bricking #1): the helper must know China mode, because only then does a block
+/// survive a restart.
+@MainActor
+final class ChinaModeReachesHelperTests: XCTestCase {
+    func testChinaModeIsSentBeforeEveryKillSwitchChange() async {
+        let h = FakeHelper(), e = FakeEngine(); e.delays = ["road-1": 60]
+        let m = AppModel(helper: h, makeEngine: { _, _ in e }, probe: FakeProbe(works: true),
+                         defaults: UserDefaults(suiteName: "cm-\(UUID().uuidString)")!,
+                         store: InMemoryRoadStore(TestRoads.five), pause: { _ in }, monitorEnabled: false,
+                         otherVPN: { nil }, openLoginPage: {})
+        await m.setChinaMode(true)
+        XCTAssertEqual(h.chinaModeSent.last, true)
+        await m.wake()
+        XCTAssertEqual(h.chinaModeSent.last, true)
+        await m.setChinaMode(false)
+        XCTAssertEqual(h.chinaModeSent.last, false)
+    }
+
+    /// Codex boot review #1: China mode changes only once the helper has it; otherwise the helper's flag
+    /// and the app disagree and a restart can seal a Mac whose owner turned China mode off.
+    func testChinaModeChangesOnlyWhenTheHelperConfirms() async {
+        let h = FakeHelper(), e = FakeEngine()
+        let m = AppModel(helper: h, makeEngine: { _, _ in e }, probe: FakeProbe(works: true),
+                         defaults: UserDefaults(suiteName: "cm-\(UUID().uuidString)")!,
+                         store: InMemoryRoadStore(TestRoads.five), pause: { _ in }, monitorEnabled: false,
+                         otherVPN: { nil }, openLoginPage: {})
+        await m.setChinaMode(true)
+        h.chinaModeError = "could not reach the helper"
+        await m.setChinaMode(false)
+        XCTAssertTrue(m.chinaMode, "still on: the helper never heard it was turned off")
+        XCTAssertEqual(m.lastError, "could not reach the helper")
+    }
+
+    /// Codex boot review #4: a nap while wake waits for the China-mode reply wins; wake must not seal after it.
+    func testNapDuringChinaModeSyncIsNotResealed() async {
+        let h = FakeHelper(), e = FakeEngine(); e.delays = ["road-1": 60]
+        let m = AppModel(helper: h, makeEngine: { _, _ in e }, probe: FakeProbe(works: true),
+                         defaults: UserDefaults(suiteName: "cm-\(UUID().uuidString)")!,
+                         store: InMemoryRoadStore(TestRoads.five), pause: { _ in }, monitorEnabled: false,
+                         otherVPN: { nil }, openLoginPage: {})
+        h.duringChinaMode = { await m.nap() }
+        await m.wake()
+        XCTAssertEqual(m.phase, .off)
+        XCTAssertEqual(h.calls.filter { $0.hasPrefix("killSwitch") }.last, "killSwitch(off)")
+        XCTAssertEqual(h.startCount, 0)
     }
 }

@@ -12,10 +12,17 @@ import Foundation
     func restoreTimeZone(withReply reply: @escaping () -> Void)
     /// Kill switch on (or refreshed for new network interfaces) / off. Reply nil = done.
     func setKillSwitch(_ on: Bool, withReply reply: @escaping (String?) -> Void)
+    /// China mode on/off: only then does a block survive a restart (KillSwitchBootPolicy). Reply nil = done.
+    func setChinaMode(_ on: Bool, withReply reply: @escaping (String?) -> Void)
     /// Diagnostics: loaded kill switch rules with counters, pf status and the main ruleset.
     func killSwitchReport(withReply reply: @escaping (String) -> Void)
     /// The engine's last 200 log lines (memory only), for the help report.
     func recentLog(withReply reply: @escaping (String) -> Void)
+    /// Neon Pup on SFM: install the pinned SFM release (nil = installed or already there).
+    func installSFM(withReply reply: @escaping (String?) -> Void)
+    /// Neon Pup on SFM: after `seconds`, set the engine's mode back (hotel window), even if the app is gone.
+    func armHotelExpiry(_ seconds: Int, apiPort: Int, secret: String, mode: String, withReply reply: @escaping (Bool) -> Void)
+    func cancelHotelExpiry(withReply reply: @escaping () -> Void)
     func version(withReply reply: @escaping (String) -> Void)
 }
 
@@ -35,7 +42,7 @@ public enum HelperConstants {
 
     /// Only Neon Pup signed with Holinic's Developer ID may talk to the root helper.
     public static let clientRequirement = developerIDRequirement(identifier: appBundleID)
-    public static let version = "12"
+    public static let version = "16"
 }
 
 /// How the app reaches the running engine's local control interface.

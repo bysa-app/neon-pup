@@ -28,6 +28,7 @@ public struct StatusLine: View {
     let text: String
     public var body: some View {
         Text(text).font(Theme.rounded(14, .medium)).foregroundStyle(Theme.text).multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity)
     }
 }
@@ -103,6 +104,8 @@ public struct RoadRow: View {
 public struct FooterBar: View {
     let startsAtLogin: Bool
     let chinaMode: Bool
+    var tunnelChinaSites = false
+    var toggleTunnelChinaSites: () -> Void = {}
     let help: () -> Void
     let toggleLogin: () -> Void
     let toggleChinaMode: () -> Void
@@ -119,6 +122,7 @@ public struct FooterBar: View {
             Spacer()
             Menu {
                 Button((chinaMode ? "\u{2713} " : "") + "China mode", action: toggleChinaMode)
+                Button((tunnelChinaSites ? "\u{2713} " : "") + "Send Chinese sites through my servers", action: toggleTunnelChinaSites)
                 Button((startsAtLogin ? "\u{2713} " : "") + "Start when my Mac starts", action: toggleLogin)
                 Divider()
                 Button("Your servers...", action: showRoads)
@@ -142,6 +146,44 @@ public struct TextLink: View {
         }
         .buttonStyle(.plain).font(Theme.rounded(12, .bold)).foregroundStyle(Theme.teal)
         .onHover { inside in if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() } }
+    }
+}
+
+/// A closed-by-default "why?" section: a teal title with a chevron, and plain text underneath once opened.
+public struct Accordion: View {
+    let title: String
+    let paragraphs: [String]
+    @State private var open: Bool
+    public init(title: String, paragraphs: [String], startsOpen: Bool = false) {
+        self.title = title
+        self.paragraphs = paragraphs
+        _open = State(initialValue: startsOpen)
+    }
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button { withAnimation(.easeOut(duration: 0.15)) { open.toggle() } } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: open ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 10, weight: .bold))
+                    Text(title).font(Theme.rounded(12, .bold))
+                }
+                .foregroundStyle(Theme.teal)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .onHover { inside in if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() } }
+            if open {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(Array(paragraphs.enumerated()), id: \.offset) { item in
+                        Text(item.element).font(Theme.rounded(12)).foregroundStyle(Theme.text)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 12).fill(Theme.nightRaised))
+            }
+        }
     }
 }
 

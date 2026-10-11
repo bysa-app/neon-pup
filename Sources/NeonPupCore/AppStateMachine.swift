@@ -1,6 +1,6 @@
 import Foundation
 
-public enum Trouble: Equatable, Sendable { case roadClosed, allRoadsSleepy, noInternet, needsApproval, otherVPN, notSealed, noRoads }
+public enum Trouble: Equatable, Sendable { case roadClosed, allRoadsSleepy, noInternet, needsApproval, otherVPN, notSealed, noRoads, setupNeeded, profileOutdated }
 public enum Phase: Equatable, Sendable { case off, connecting, connected, switching, hotelLogin, trouble(Trouble), failed }
 public enum Mood: String, Sendable { case sleeping, sniffing, happy, confused }
 public enum Event: Equatable, Sendable {
@@ -10,6 +10,8 @@ public enum Event: Equatable, Sendable {
     case hotelLoginStarted, hotelLoginEnded, otherVPNFound
     /// A seal the Mac needed (China mode, engine down) could not be applied.
     case sealFailed
+    /// Neon Pup on SFM: setup not finished; SFM runs an older server list than Neon Pup has.
+    case setupNeededFound, profileOutdated
     case noRoadsFound
 }
 
@@ -27,7 +29,8 @@ public enum AppStateMachine {
 
     public static func isOn(_ p: Phase) -> Bool {
         switch p {
-        case .off, .failed, .trouble(.needsApproval), .trouble(.otherVPN), .trouble(.notSealed), .trouble(.noRoads): return false
+        case .off, .failed, .trouble(.needsApproval), .trouble(.otherVPN), .trouble(.notSealed), .trouble(.noRoads),
+             .trouble(.setupNeeded): return false
         default: return true
         }
     }
@@ -40,6 +43,7 @@ public enum AppStateMachine {
         case .otherVPNFound: return .trouble(.otherVPN)
         case .sealFailed: return .trouble(.notSealed)
         case .noRoadsFound: return .trouble(.noRoads)
+        case .setupNeededFound: return .trouble(.setupNeeded)
         case .engineFailed: return p == .off ? p : .failed
         default: break
         }
@@ -53,6 +57,7 @@ public enum AppStateMachine {
         case .engineReady, .roadsBack: return .connected
         case .roadPicked: return .switching
         case .pickedRoadUnreachable: return .trouble(.roadClosed)
+        case .profileOutdated: return .trouble(.profileOutdated)
         case .allRoadsDown(let direct): return .trouble(direct ? .allRoadsSleepy : .noInternet)
         default: return p
         }
@@ -76,6 +81,8 @@ public enum AppStateMachine {
         // Never claim the Mac is blocked when it is not (security review 2026-10-10).
         case .trouble(.notSealed): return "I couldn't block the internet. Turn Wi-Fi off, then open Help"
         case .trouble(.noRoads): return "Add your servers first"
+        case .trouble(.setupNeeded): return "Finish setting up first"
+        case .trouble(.profileOutdated): return "Your server list changed. Press refresh in SFM"
         case .connected:
             switch mode {
             case .secure: return "Connected, cozy and safe"
@@ -87,7 +94,7 @@ public enum AppStateMachine {
         case .trouble(.noInternet): return "No internet at all, check the Wi-Fi"
         case .trouble(.needsApproval): return "I need a one-time OK in System Settings"
         // The kill switch keeps everything blocked until she wakes or naps, so say so plainly.
-        case .failed: return "I paused the internet to keep you safe. Press Wake me up to try again"
+        case .failed: return "The connection dropped. Press Wake me up to try again"
         }
     }
 

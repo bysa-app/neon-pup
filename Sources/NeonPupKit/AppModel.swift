@@ -22,6 +22,8 @@ public final class AppModel: ObservableObject {
     enum Keys {
         static let mode = "roadMode", road = "pickedRoad", port = "engineAPIPort", secret = "engineAPISecret"
         static let chinaMode = "chinaMode"
+        static let claudeRoad = "claudeRoad"
+        static let tunnelChinaSites = "tunnelChinaSites"
     }
 
     private let helper: HelperControlling
@@ -51,7 +53,33 @@ public final class AppModel: ObservableObject {
     private var roadsChangedDuringConnect = false
     private var checkAgain = false
     private let connectAttempts = 20
+    /// Consecutive failed checks per server; one miss is a blip, two move Claude on (Codex full review).
+    private var misses: [String: Int] = [:]
+    /// Checks in a row with the engine running, no server answering and ordinary internet working.
+    private var stuckChecks = 0
+    /// Checks to wait after a stuck-engine reconnect before another one (about 5 minutes at 15 s).
+    private var reconnectCooldown = 0
+    private let stuckChecksBeforeReconnect = 4
+    private let reconnectCooldownChecks = 20
     private let monitorInterval: UInt64 = 15_000_000_000
+
+    /// Neon Pup on SFM (2026-10-10): SFM's NetworkExtension tunnel underneath, this app on top.
+    public struct SFMOptions {
+        /// true until SFM is installed, approved, has Neon Pup's profile and its VPN.
+        public var setupNeeded: () -> Bool
+        /// The fingerprint of the server list SFM should be running (ConfigTemplate.fingerprintTag).
+        public var fingerprint: () -> String?
+        public init(setupNeeded: @escaping () -> Bool, fingerprint: @escaping () -> String?) {
+            self.setupNeeded = setupNeeded; self.fingerprint = fingerprint
+        }
+    }
+    private let sfm: SFMOptions?
+    /// Tunnel drops reconnected in China mode since the last good check (bounded).
+    private var dropReconnects = 0
+    /// "Send Chinese sites through my servers": off by default (the maintainer 2026-10-10). A live engine mode.
+    @Published public private(set) var tunnelChinaSites: Bool
+    /// The engine mode outside the hotel window.
+    private var baseMode: String { tunnelChinaSites ? "Global" : "Rule" }
 
     public init(helper: HelperControlling,
                 makeEngine: @escaping (Int, String) -> EngineControlling = { EngineAPI(port: $0, secret: $1) },
@@ -62,12 +90,15 @@ public final class AppModel: ObservableObject {
                 notify: @escaping (String) -> Void = { _ in },
                 monitorEnabled: Bool = true,
                 otherVPN: @escaping () -> String? = OtherVPNDetector.activeName,
-                openLoginPage: @escaping () -> Void = OtherVPNDetector.openLoginPage) {
+                openLoginPage: @escaping () -> Void = OtherVPNDetector.openLoginPage,
+                sfm: SFMOptions? = nil) {
         self.helper = helper; self.makeEngine = makeEngine; self.probe = probe; self.defaults = defaults
         self.store = store; self.pause = pause; self.notify = notify
         self.monitorEnabled = monitorEnabled; self.otherVPN = otherVPN; self.openLoginPage = openLoginPage
         self.mode = RoadMode(stored: defaults.string(forKey: Keys.mode))
         self.chinaMode = defaults.bool(forKey: Keys.chinaMode)
+        self.sfm = sfm
+        self.tunnelChinaSites = defaults.bool(forKey: Keys.tunnelChinaSites)
         self.roadSpecs = store.load()
         self.pickedRoad = defaults.string(forKey: Keys.road)
     }
@@ -79,7 +110,11 @@ public final class AppModel: ObservableObject {
     private var killSwitchWanted: Bool { chinaMode || isOn || phase == .failed || phase == .trouble(.notSealed) }
 
     @discardableResult
-    private func syncKillSwitch() async -> String? { await helper.setKillSwitch(killSwitchWanted) }
+    private func syncKillSwitch() async -> String? {
+        // China mode first, so a block set below survives a restart only in China mode (boot policy).
+        if let error = await helper.setChinaMode(chinaMode) { return error }
+        return await helper.setKillSwitch(killSwitchWanted)
+    }
 
     /// Like syncKillSwitch, but a failed seal that was needed becomes visible instead of silent.
     private func enforceKillSwitch() async {
@@ -95,6 +130,13 @@ public final class AppModel: ObservableObject {
 
     /// On launch: take over an engine left running by a crashed app, otherwise make sure nothing is left changed.
     public func reattach() async {
+        // Offline in China mode with the tunnel kept up: stay offline until Wake me up.
+        // Make sure it really is: Wi-Fi may have been turned on by hand meanwhile (Codex pre-release #3).
+        if chinaMode, sfm != nil, helper.isOffline {
+            if let error = await helper.goOffline() { lastError = error; send(.sealFailed); return }
+            phase = .off
+            return
+        }
         let readiness = helper.readiness()
         guard readiness == .ready else {
             // China mode cannot be enforced without the helper: say so (approval reset by an OS update, or
@@ -110,7 +152,7 @@ public final class AppModel: ObservableObject {
             phase = .connecting
             // A crash during the hotel window leaves the engine in Direct; close it, or restart the engine
             // (a new one starts in Rule) when it will not switch (Codex review #2).
-            if let engine, await !engine.setMode("Rule") {
+            if let engine, await !engine.setMode(baseMode) {
                 await reconnect()
                 return
             }
@@ -142,6 +184,8 @@ public final class AppModel: ObservableObject {
             roadsChangedDuringConnect = false
             generation += 1
             let mine = generation
+            // As in nap(): a check during this stop must not start a second reconnect.
+            engine = nil
             monitor?.cancel()
             monitor = nil
             hotelLoginTimer?.cancel()
@@ -174,6 +218,10 @@ public final class AppModel: ObservableObject {
             send(.noRoadsFound)
             return
         }
+        if let sfm, sfm.setupNeeded() {
+            send(.setupNeededFound)
+            return
+        }
         if let other = otherVPN() {
             lastError = "\(other) is on"
             send(.otherVPNFound)
@@ -192,7 +240,12 @@ public final class AppModel: ObservableObject {
             break
         }
         // Block every way out except the tunnel before the engine starts, so nothing leaks while connecting.
-        if let error = await helper.setKillSwitch(true) {
+        _ = await helper.setChinaMode(chinaMode)
+        // A nap during that reply wins: never seal after it (Codex boot review #4).
+        guard generation == mine else { return }
+        // Under SFM the tunnel itself keeps traffic in while it connects, and "offline" would only switch Wi-Fi
+        // off for the start to switch it back on (Fable re-check A: a failed switch-off blocked every start).
+        if sfm == nil, let error = await helper.setKillSwitch(true) {
             lastError = error
             // The internet is NOT blocked, so never show "paused" here (Codex review #1).
             send(.sealFailed)
@@ -202,8 +255,9 @@ public final class AppModel: ObservableObject {
         let access: EngineAccess
         let result = await helper.start(roads: roadSpecs)
         guard generation == mine else {
-            // Napped while starting: make sure nothing stays running or changed.
-            if case .started = result { await helper.stop() }
+            // Napped while starting: make sure nothing stays running or changed. In China mode on SFM, Go offline
+            // keeps the tunnel up (Fable pre-release #2).
+            if case .started = result, !(chinaMode && sfm != nil) { await helper.stop() }
             await helper.restoreTimeZone()
             await syncKillSwitch()
             return
@@ -212,6 +266,8 @@ public final class AppModel: ObservableObject {
         case .failed(let error):
             lastError = error
             send(.engineFailed)
+            // China mode: back offline after a failed start (Codex review of the built integration).
+            if chinaMode { await enforceKillSwitch() }
             return
         case .started(let granted):
             access = granted
@@ -223,12 +279,16 @@ public final class AppModel: ObservableObject {
         selections = [:]
         _ = await helper.applyTimeZone()
         guard generation == mine else { await helper.restoreTimeZone(); return }
+        // Wait for any server to answer, all tested in parallel; a dead server 1 no longer holds up the start
+        // (Codex full review: about two minutes lost when Singapore everyday was blocked).
         for _ in 0..<connectAttempts {
-            if await eng.delay(of: "choice") != nil { break }
+            if !(await measure(eng)).isEmpty { break }
             guard generation == mine else { return }
             await pause(1_000_000_000)
         }
         guard generation == mine else { return }
+        // The user's mode ("Tunnel Chinese sites too" or not) before the first check.
+        _ = await eng.setMode(baseMode)
         // The tunnel exists now: refresh the rules so they let it through.
         await syncKillSwitch()
         guard generation == mine else { return }
@@ -238,6 +298,12 @@ public final class AppModel: ObservableObject {
 
     public func nap() async {
         generation += 1
+        // A pending time zone repair must not re-apply Singapore after the original comes back below.
+        timeZoneRepair?.cancel()
+        timeZoneRepair = nil
+        // Let go of the tunnel first: the network change its stopping causes must not look like a drop
+        // (live test 2026-10-12: Go offline was undone by the drop reconnect, Wi-Fi came back on).
+        engine = nil
         monitor?.cancel()
         monitor = nil
         hotelLoginTimer?.cancel()
@@ -245,6 +311,18 @@ public final class AppModel: ObservableObject {
         // Outside China mode lift the kill switch first; otherwise stopping would seal and drop every
         // open connection for nothing (final review #11). In China mode stopping seals, as intended.
         let keepSealed = chinaMode
+        // On SFM, China mode goes offline with the tunnel left up, so Wake me up never opens a direct way out
+        // (live test 2026-10-12).
+        if keepSealed, sfm != nil {
+            let error = await helper.goOffline()
+            await helper.restoreTimeZone()
+            selections = [:]
+            notifiedAllDown = false
+            // Wi-Fi is still on: never claim offline (Codex pre-release #2).
+            if let error { lastError = error; send(.sealFailed); return }
+            send(.napTapped)
+            return
+        }
         if !keepSealed, let error = await helper.setKillSwitch(false) { lastError = error }
         await helper.stop()
         await helper.restoreTimeZone()
@@ -268,9 +346,21 @@ public final class AppModel: ObservableObject {
         send(.napTapped)
     }
 
-    private func select(_ name: String, in group: String) async {
-        guard let engine, selections[group] != name else { return }
-        if await engine.select(name, in: group) { selections[group] = name }
+    /// true when the selector points at `name` afterwards (Codex full review: a failed switch was reported as
+    /// Connected).
+    @discardableResult
+    private func select(_ name: String, in group: String) async -> Bool {
+        guard let engine else { return false }
+        guard selections[group] != name else { return true }
+        guard await engine.select(name, in: group) else { return false }
+        selections[group] = name
+        return true
+    }
+
+    /// The server Claude is on, remembered across restarts so it doesn't snap back to the top of the list.
+    private var claudeRoad: String? {
+        get { defaults.string(forKey: Keys.claudeRoad).flatMap { order.contains($0) ? $0 : nil } }
+        set { defaults.set(newValue, forKey: Keys.claudeRoad) }
     }
 
     /// Delay of every road, measured in parallel.
@@ -307,6 +397,15 @@ public final class AppModel: ObservableObject {
         guard generation == mine else { return }
         let status = await helper.status()
         guard generation == mine else { return }
+        if !status.running, sfm != nil, dropReconnects < 3 {
+            // Get the tunnel back at once instead of waiting for a tap (live test 2026-10-12: outside China mode
+            // the panel said "dropped" while SFM was already back). reconnect() cancels this
+            // monitor, so it runs in a task of its own: its waits and engine calls must not inherit the
+            // cancellation (Fable re-check B).
+            dropReconnects += 1
+            await Task { await self.reconnect() }.value
+            return
+        }
         if !status.running {
             lastError = status.lastError ?? lastError
             monitor?.cancel()
@@ -319,12 +418,32 @@ public final class AppModel: ObservableObject {
             send(sealed ? .engineFailed : .sealFailed)
             return
         }
+        if let expected = sfm?.fingerprint() {
+            let known = await engine.knows(expected)
+            guard generation == mine else { return }
+            if known == false {
+                // SFM runs an older server list: still inside the tunnel, but its road numbers may mean other
+                // servers, so nothing is steered until the user presses refresh in SFM.
+                send(.profileOutdated)
+                return
+            }
+            if known == nil {
+                lastError = "couldn't confirm which servers SFM runs"
+                if phase == .connected { send(.roadPicked) }
+                return
+            }
+        }
         let alive = await measure(engine)
         guard generation == mine else { return }
         delays = alive
+        for tag in order { misses[tag] = alive[tag] != nil ? 0 : (misses[tag] ?? 0) + 1 }
+        // Claude's server gets one missed check of grace before it is abandoned (a blip, not an outage).
+        var usable = Set(alive.keys)
+        if let current = claudeRoad, misses[current] ?? 0 <= 1, !usable.isEmpty { usable.insert(current) }
         // A picked road that was since deleted counts as no pick.
         let picked = pickedRoad.flatMap { order.contains($0) ? $0 : nil }
-        guard let selection = RoadPolicy.selection(mode: mode, picked: picked, alive: Set(alive.keys), order: order) else {
+        guard let selection = RoadPolicy.selection(mode: mode, picked: picked, alive: usable, order: order,
+                                                   current: claudeRoad) else {
             let direct = await probe.directInternetWorks()
             guard generation == mine else { return }
             send(.allRoadsDown(directInternet: direct))
@@ -332,14 +451,52 @@ public final class AppModel: ObservableObject {
                 notifiedAllDown = true
                 notify("All servers are sleepy, I'll keep trying")
             }
+            await recoverIfStuck(direct: direct)
             return
         }
-        // During the hotel login window "choice" stays direct; Claude always follows the fixed order.
-        if phase != .hotelLogin { await select(selection.choice, in: "choice") }
-        await select(selection.claude, in: "claude")
+        stuckChecks = 0
+        // During the hotel login window "choice" stays direct; Claude follows its own server.
+        let choiceOK = phase == .hotelLogin ? true : await select(selection.choice, in: "choice")
+        let claudeOK = await select(selection.claude, in: "claude")
         guard generation == mine else { return }
+        guard choiceOK, claudeOK else {
+            // Not switched: don't claim Connected; the next check tries again.
+            lastError = "could not switch to a working server"
+            if phase == .connected { send(.roadPicked) }
+            return
+        }
+        claudeRoad = selection.claude
+        dropReconnects = 0
+        // Every check: macOS may have put the local time zone back (see networkChanged()). A no-op outside China.
+        _ = await helper.applyTimeZone()
+        guard generation == mine else { return }
+        // The user's mode must really be in force ("Send Chinese sites through my servers" or not).
+        // Read back, never assumed: an unreadable mode could still be Direct (Codex re-check).
+        if phase != .hotelLogin, await engine.currentMode() != baseMode {
+            let fixed = await engine.setMode(baseMode)
+            let confirmed = fixed ? await engine.currentMode() == baseMode : false
+            guard generation == mine else { return }
+            if !confirmed {
+                lastError = "couldn't set the engine's mode"
+                if phase == .connected { send(.roadPicked) }
+                return
+            }
+        }
         notifiedAllDown = false
         send(selection.pickedRoadDown ? .pickedRoadUnreachable : .roadsBack)
+    }
+
+    /// The engine runs but no server answers while ordinary internet works: after about a minute, restart it
+    /// once, with the block held, then wait about five minutes before trying again (Codex full review: after a
+    /// network change or wake an engine can stay up without recovering).
+    private func recoverIfStuck(direct: Bool) async {
+        guard direct, phase != .hotelLogin else { stuckChecks = 0; return }
+        if reconnectCooldown > 0 { reconnectCooldown -= 1; return }
+        stuckChecks += 1
+        guard stuckChecks >= stuckChecksBeforeReconnect else { return }
+        stuckChecks = 0
+        reconnectCooldown = reconnectCooldownChecks
+        await reconnect()
     }
 
     private func startMonitor() {
@@ -359,11 +516,33 @@ public final class AppModel: ObservableObject {
         // Ask the helper to re-confirm the tunnel carries the route after the network changed.
         if killSwitchWanted { await enforceKillSwitch() }
         await check()
+        // macOS puts the local time zone back a few seconds after a network change, from the Wi-Fi networks
+        // around (live test 2026-10-12: about 4 s, even with "set automatically" written off). Put Singapore
+        // back after it.
+        timeZoneRepair?.cancel()
+        timeZoneRepair = Task { [weak self] in
+            for _ in 0..<2 {
+                await self?.pause(5_000_000_000)
+                guard let self, !Task.isCancelled, self.isOn else { return }
+                _ = await self.helper.applyTimeZone()
+            }
+        }
     }
+    private var timeZoneRepair: Task<Void, Never>?
+    /// Tests: wait for the time zone repair after a network change.
+    func settleTimeZone() async { await timeZoneRepair?.value }
 
+    /// China mode changes only once the helper has it (Codex boot review #1): if the app and the helper's flag
+    /// disagree, a restart can seal a Mac whose owner turned China mode off, or leave one unsealed.
     public func setChinaMode(_ on: Bool) async {
+        if helper.readiness() == .ready, let error = await helper.setChinaMode(on) {
+            lastError = error
+            return
+        }
         chinaMode = on
         defaults.set(on, forKey: Keys.chinaMode)
+        // Leaving China mode while offline: the tunnel kept up for it stops before Wi-Fi comes back.
+        if !on, sfm != nil, !isOn, await helper.status().running { await helper.stop() }
         await enforceKillSwitch()
     }
 
@@ -372,6 +551,14 @@ public final class AppModel: ObservableObject {
     public func startHotelLogin() async {
         if !isOn { await wake() }
         guard isOn, engine != nil, phase != .hotelLogin else { return }
+        // The helper must hold the window's end before it opens: it closes it even if this app crashes or quits.
+        guard let secret = defaults.string(forKey: Keys.secret),
+              await helper.armHotelExpiry(seconds: Int(hotelLoginNanos / 1_000_000_000),
+                                          apiPort: defaults.integer(forKey: Keys.port), secret: secret, mode: baseMode)
+        else {
+            lastError = "couldn't open the login window safely"
+            return
+        }
         send(.hotelLoginStarted)
         _ = await engine?.setMode("Direct")
         openLoginPage()
@@ -405,13 +592,61 @@ public final class AppModel: ObservableObject {
         hotelLoginTimer = nil
         // Always close the direct window, whatever the roads do afterwards (final review #3). If the engine
         // refuses, restart it: a new engine starts in Rule (Codex review #3).
-        let closed = await engine?.setMode("Rule") ?? true
+        let closed = await engine?.setMode(baseMode) ?? true
+        // The helper's expiry is the backstop: keep it armed until the window really closed (Codex re-check).
+        if closed { await helper.cancelHotelExpiry() }
         send(.hotelLoginEnded)
         guard closed else {
             await reconnect()
             return
         }
         await check()
+    }
+
+    /// Panel links. On SFM a dropped or napping tunnel means ordinary internet, so "Back to normal internet"
+    /// only exists for the old engine, and the Wi-Fi login link only while the tunnel runs but no server
+    /// answers (live test 2026-10-12).
+    public var showsNapLink: Bool { phase == .failed && sfm == nil }
+    public var showsHotelLogin: Bool {
+        guard sfm != nil else { return AppStateMachine.showsHotelLogin(phase, chinaMode: chinaMode) }
+        // These two only come from checks on a running tunnel.
+        return phase == .trouble(.allRoadsSleepy) || phase == .trouble(.noInternet)
+    }
+
+    /// The one text link under the status (the maintainer 2026-10-12: one link at most, two stacked links look bad).
+    public enum PanelLink: Equatable {
+        case openApproval, addServers, continueSetup, openSFM, nap(String), hotelLogin
+    }
+    public var panelLink: PanelLink? {
+        switch phase {
+        case .trouble(.needsApproval): return .openApproval
+        case .trouble(.noRoads): return .addServers
+        case .trouble(.setupNeeded): return .continueSetup
+        case .trouble(.profileOutdated): return .openSFM
+        default: break
+        }
+        // In China mode napping keeps everything blocked, so don't promise normal internet.
+        if showsNapLink { return .nap(chinaMode ? "Stop trying for now" : "Back to normal internet") }
+        if showsHotelLogin { return .hotelLogin }
+        return nil
+    }
+
+    /// The setup wizard finished. Its "start SFM once" step leaves SFM's tunnel running while Neon Pup naps;
+    /// stop it so napping really means off, as the last page says (live test 2026-10-12).
+    public func setupFinished() async {
+        guard phase == .off, await helper.status().running, phase == .off else { return }
+        await helper.stop()
+    }
+
+    /// Setup wizard: macOS's "Allow in the Background" approval for Neon Pup's helper.
+    public func openHelperApproval() { helper.openApproval() }
+
+    /// "Send Chinese sites through my servers". Changes the engine's mode at once while connected.
+    public func setTunnelChinaSites(_ on: Bool) async {
+        tunnelChinaSites = on
+        defaults.set(on, forKey: Keys.tunnelChinaSites)
+        guard isOn, phase != .hotelLogin, let engine else { return }
+        _ = await engine.setMode(baseMode)
     }
 
     public func setMode(_ newMode: RoadMode) async {
@@ -442,6 +677,8 @@ public final class AppModel: ObservableObject {
         let pickedSpec = pickedRoad.flatMap { tag in roads.firstIndex { $0.tag == tag }.map { roadSpecs[$0] } }
         roadSpecs = specs
         delays = [:]
+        misses = [:]
+        claudeRoad = nil
         if let spec = pickedSpec {
             // Matched on everything but the name, so a rename keeps the pick (Fable review #3).
             if let index = specs.firstIndex(where: { $0.sameRoad(as: spec) }) {
@@ -491,7 +728,9 @@ public final class AppModel: ObservableObject {
     /// Gallery and previews only: a model frozen in a given state.
     public static func preview(phase: Phase, mode: RoadMode = .secure, pickedRoad: String? = nil, delays: [String: Int] = [:],
                                roads: [RoadSpec] = previewRoads) -> AppModel {
-        let model = AppModel(helper: PreviewHelper(), store: InMemoryRoadStore(roads), monitorEnabled: false)
+        // The shipped app runs on SFM, so the renders do too.
+        let model = AppModel(helper: PreviewHelper(), store: InMemoryRoadStore(roads), monitorEnabled: false,
+                             sfm: SFMOptions(setupNeeded: { false }, fingerprint: { nil }))
         model.phase = phase
         model.mode = mode
         model.pickedRoad = pickedRoad
@@ -526,5 +765,6 @@ final class PreviewHelper: HelperControlling {
     func restoreTimeZone() async {}
     func stopNow(keepKillSwitch: Bool) {}
     func setKillSwitch(_ on: Bool) async -> String? { nil }
+    func setChinaMode(_ on: Bool) async -> String? { nil }
     func recentLog() async -> String { "" }
 }

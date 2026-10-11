@@ -59,7 +59,8 @@ final class HelpGuideTests: XCTestCase {
         for line in ["I need a one-time OK in System Settings", "Add your servers first", "Another app is changing your internet",
                      "All servers are sleepy, I'll keep trying", "No internet at all, check the Wi-Fi",
                      "This server is blocked here, trying another", "I couldn't block the internet",
-                     "I paused the internet to keep you safe"] {
+                     "The connection dropped", "Finish setting up first",
+                     "Your server list changed. Press refresh in SFM"] {
             XCTAssertTrue(HelpGuide.allText.contains(line), line)
         }
     }

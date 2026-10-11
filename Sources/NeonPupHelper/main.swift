@@ -18,7 +18,14 @@ final class HelperService: NSObject, NeonPupHelperProtocol {
     func restoreTimeZone(withReply reply: @escaping () -> Void) { timeZone.restore(); reply() }
     func killSwitchReport(withReply reply: @escaping (String) -> Void) { reply(engine.killSwitchReport()) }
     func setKillSwitch(_ on: Bool, withReply reply: @escaping (String?) -> Void) { reply(engine.setKillSwitch(on)) }
+    func setChinaMode(_ on: Bool, withReply reply: @escaping (String?) -> Void) { reply(engine.setChinaMode(on)) }
     func recentLog(withReply reply: @escaping (String) -> Void) { reply(engine.recentLog()) }
+    let hotel = HotelExpiry()
+    func installSFM(withReply reply: @escaping (String?) -> Void) { reply(SFMInstaller.install()) }
+    func armHotelExpiry(_ seconds: Int, apiPort: Int, secret: String, mode: String, withReply reply: @escaping (Bool) -> Void) {
+        reply(hotel.arm(seconds: seconds, apiPort: apiPort, secret: secret, mode: mode))
+    }
+    func cancelHotelExpiry(withReply reply: @escaping () -> Void) { hotel.cancel(); reply() }
     func version(withReply reply: @escaping (String) -> Void) { reply(HelperConstants.version) }
 }
 
@@ -40,7 +47,7 @@ final class ListenerDelegate: NSObject, NSXPCListenerDelegate {
     /// let launchd start the current binary next time (this is how an app update reaches the helper).
     func exitIfIdle() {
         lock.lock(); let idle = open <= 0; lock.unlock()
-        if idle && !service.engine.status().0 && !service.engine.killSwitch.wanted { exit(0) }
+        if idle && !service.engine.status().0 && !service.engine.killSwitch.wanted && !service.hotel.pending { exit(0) }
     }
 
     private func connectionClosed() {
@@ -49,14 +56,19 @@ final class ListenerDelegate: NSObject, NSXPCListenerDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
             guard let self else { return }
             self.lock.lock(); let stillIdle = self.open <= 0; self.lock.unlock()
-            if stillIdle && !self.service.engine.status().0 { exit(0) }
+            if stillIdle && !self.service.engine.status().0 && !self.service.hotel.pending { exit(0) }
         }
     }
 }
 
 let delegate = ListenerDelegate()
+// A pending hotel expiry keeps the helper alive; once it settles, exit if nothing else needs it.
+delegate.service.hotel.onSettled = { DispatchQueue.main.asyncAfter(deadline: .now() + 2) { delegate.exitIfIdle() } }
 // A fresh helper never supervises a running engine: stop any engine a dead helper left behind, and
 // restore a leftover time zone record (crash, reboot).
+// A block from an earlier boot is dropped unless China mode is on (Codex review 2026-10-10), before stop()
+// can seal on it.
+delegate.service.engine.applyBootPolicy()
 delegate.service.engine.stop()
 delegate.service.timeZone.restore()
 let listener = NSXPCListener(machServiceName: HelperConstants.machService)

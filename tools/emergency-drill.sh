@@ -23,6 +23,7 @@ bash -c "$LINE" 2>&1 | grep -v -E 'ALTQ|^$' | sed 's/^/   /'
 sleep 2
 r=$(reach); echo "3 after the line: $r (must be 200)"; [ "$r" = "200" ] || fail=1
 sudo test -e /private/var/db/co.holinic.neonpup/killswitch-wanted && { echo "4 FAIL: block wanted flag still there"; fail=1; } || echo "4 block wanted flag gone"
+sudo test -e /private/var/db/co.holinic.neonpup/killswitch-china && { echo "4b FAIL: China mode flag still there"; fail=1; } || echo "4b China mode flag gone"
 rules=$(sudo pfctl -a com.apple/co.holinic.neonpup -s rules 2>/dev/null | grep -v ALTQ)
 [ -z "$rules" ] && echo "5 no Neon Pup rules left" || { echo "5 FAIL: rules left"; fail=1; }
 [ "$(defaults read co.holinic.neonpup chinaMode)" = "0" ] && echo "6 China mode off" || { echo "6 FAIL: China mode still on"; fail=1; }

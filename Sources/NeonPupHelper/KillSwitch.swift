@@ -15,16 +15,40 @@ final class KillSwitch {
     private var rulesFile: URL { HelperPaths.state.appendingPathComponent("killswitch.conf") }
     private var tokenFile: URL { HelperPaths.state.appendingPathComponent("pf-token") }
     private var wantedFile: URL { HelperPaths.state.appendingPathComponent("killswitch-wanted") }
+    private var chinaFile: URL { HelperPaths.state.appendingPathComponent("killswitch-china") }
 
+    /// The block is wanted. The file records the boot it was written in (KillSwitchBootPolicy).
     var wanted: Bool {
         get { FileManager.default.fileExists(atPath: wantedFile.path) }
-        set {
-            guard (try? HelperPaths.ensureState()) != nil else { return }
-            if newValue {
-                FileManager.default.createFile(atPath: wantedFile.path, contents: Data(), attributes: [.posixPermissions: 0o600])
-            } else {
-                try? FileManager.default.removeItem(at: wantedFile)
-            }
+        set { setFlag(wantedFile, newValue, contents: KillSwitchBootPolicy.currentBoot() ?? "") }
+    }
+
+    /// China mode: the only case in which a block survives a restart.
+    var chinaMode: Bool {
+        get { FileManager.default.fileExists(atPath: chinaFile.path) }
+        set { setFlag(chinaFile, newValue, contents: "china") }
+    }
+
+    /// Never deletes a flag that should stay (Codex boot review #2): an unchanged flag is left alone, a new one is
+    /// written to a temporary file and renamed into place, so a crash leaves either the old or the new flag.
+    private func setFlag(_ file: URL, _ on: Bool, contents: String) {
+        guard (try? HelperPaths.ensureState()) != nil else { return }
+        guard on else { try? FileManager.default.removeItem(at: file); return }
+        let data = Data(contents.utf8)
+        if (try? Data(contentsOf: file)) == data { return }
+        let temp = file.deletingLastPathComponent().appendingPathComponent("." + file.lastPathComponent + ".new")
+        try? FileManager.default.removeItem(at: temp)
+        guard FileManager.default.createFile(atPath: temp.path, contents: data, attributes: [.posixPermissions: 0o600]) else { return }
+        if rename(temp.path, file.path) != 0 { try? FileManager.default.removeItem(at: temp) }
+    }
+
+    /// At every helper launch: drop a block left by an earlier boot unless China mode is on (Codex review
+    /// 2026-10-10: a power cut while connected sealed the Mac at the next boot with no app to lift it).
+    func applyBootPolicy() {
+        let recorded = try? String(contentsOf: wantedFile, encoding: .utf8)
+        if !KillSwitchBootPolicy.keepAtLaunch(wanted: wanted, chinaMode: chinaMode, recordedBoot: recorded,
+                                              currentBoot: KillSwitchBootPolicy.currentBoot()) {
+            wanted = false
         }
     }
 

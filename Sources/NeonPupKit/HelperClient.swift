@@ -57,6 +57,14 @@ public final class HelperClient: HelperControlling {
         return version
     }
 
+    /// Maintenance: remove the helper (fresh-install tests). The next wake asks for the approval again.
+    public func uninstall() -> String {
+        connection?.invalidate()
+        connection = nil
+        do { try service.unregister() } catch { return "unregister failed: \(error.localizedDescription)" }
+        return "helper removed, status \(service.status.rawValue) (0 = not registered)"
+    }
+
     /// Maintenance: unregister (stops the running helper) and register again.
     public func reinstall() -> String {
         connection?.invalidate()
@@ -98,12 +106,28 @@ public final class HelperClient: HelperControlling {
         await call((false, "could not reach the helper")) { h, done in h.status { done(($0, $1)) } }
     }
     public func applyTimeZone() async -> String? { await call(nil) { h, done in h.applyTimeZone { done($0) } } }
+    public func setChinaMode(_ on: Bool) async -> String? {
+        await call("could not reach the helper") { h, done in h.setChinaMode(on) { done($0) } }
+    }
+
     public func setKillSwitch(_ on: Bool) async -> String? {
         await call("could not reach the helper") { h, done in h.setKillSwitch(on) { done($0) } }
     }
 
     public func killSwitchReport() async -> String {
         await call("could not reach the helper") { h, done in h.killSwitchReport { done($0) } }
+    }
+
+    public func installSFM() async -> String? {
+        await call("could not reach the helper") { h, done in h.installSFM { done($0) } }
+    }
+
+    public func armHotelExpiry(seconds: Int, apiPort: Int, secret: String, mode: String) async -> Bool {
+        await call(false) { h, done in h.armHotelExpiry(seconds, apiPort: apiPort, secret: secret, mode: mode) { done($0) } }
+    }
+
+    public func cancelHotelExpiry() async {
+        await call(()) { h, done in h.cancelHotelExpiry { done(()) } }
     }
 
     public func recentLog() async -> String {

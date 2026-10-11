@@ -41,7 +41,7 @@ final class AppStateMachineTests: XCTestCase {
         XCTAssertEqual(M.status(.trouble(.roadClosed)), "This server is blocked here, trying another")
         XCTAssertEqual(M.status(.trouble(.allRoadsSleepy)), "All servers are sleepy, I'll keep trying")
         XCTAssertEqual(M.status(.trouble(.noInternet)), "No internet at all, check the Wi-Fi")
-        XCTAssertEqual(M.status(.failed), "I paused the internet to keep you safe. Press Wake me up to try again")
+        XCTAssertEqual(M.status(.failed), "The connection dropped. Press Wake me up to try again")
         XCTAssertEqual(M.buttonTitle(.off), "Wake me up")
         XCTAssertEqual(M.buttonTitle(.failed), "Wake me up")
         XCTAssertEqual(M.buttonTitle(.trouble(.needsApproval)), "Wake me up")
@@ -78,7 +78,7 @@ final class AppStateMachineExtensionTests: XCTestCase {
 
     func testEngineDeathUnderKillSwitchExplainsThePause() {
         XCTAssertEqual(M.status(.failed, mode: .secure),
-                       "I paused the internet to keep you safe. Press Wake me up to try again")
+                       "The connection dropped. Press Wake me up to try again")
     }
 
     func testHotelLogin() {

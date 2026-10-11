@@ -228,6 +228,9 @@ final class EngineSupervisor {
         queue.sync {
             killSwitch.wanted = on
             guard on else { return killSwitch.unseal() }
+            // A flag that didn't save would only be lost if the helper restarted; block now as usual and record it
+            // for the help report rather than claim the Mac isn't blocked (Codex boot review #2).
+            if !killSwitch.wanted { lastError = "could not save the block for a helper restart" }
             guard process?.isRunning == true else { return killSwitch.seal() }
             // Engine running: stays sealed unless its own tunnel carries the default route.
             if !KillSwitch.tunnelCarriesDefaultRoute(ConfigTemplate.tunnelName), let error = killSwitch.seal() {
@@ -239,6 +242,13 @@ final class EngineSupervisor {
     }
 
     func killSwitchReport() -> String { queue.sync { killSwitch.report() } }
+
+    func setChinaMode(_ on: Bool) -> String? {
+        queue.sync { killSwitch.chinaMode = on; return killSwitch.chinaMode == on ? nil : "could not save China mode" }
+    }
+
+    /// Helper launch: apply the boot policy before anything can seal.
+    func applyBootPolicy() { queue.sync { killSwitch.applyBootPolicy() } }
 
     func recentLog() -> String { queue.sync { log.text } }
 

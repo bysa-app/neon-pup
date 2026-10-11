@@ -30,6 +30,30 @@ final class RoadPolicyTests: XCTestCase {
                        RoadSelection(choice: "sg-reality", claude: "sg-reality", pickedRoadDown: false))
     }
 
+    /// Codex full review 2026-10-10: Claude stays on the server it is using while that server works, instead of
+    /// snapping back to the top of the list (which cuts its open connections). It still falls back in order,
+    /// to the US automatically when both Singapore servers are down (the maintainer: no approval needed).
+    func testClaudeStaysOnItsWorkingServer() {
+        XCTAssertEqual(RoadPolicy.selection(mode: .secure, picked: nil, alive: all, order: order, current: "sg-hysteria2"),
+                       RoadSelection(choice: "sg-hysteria2", claude: "sg-hysteria2", pickedRoadDown: false))
+        XCTAssertEqual(RoadPolicy.selection(mode: .fast, picked: nil, alive: all, order: order, current: "sg-hysteria2"),
+                       RoadSelection(choice: "auto", claude: "sg-hysteria2", pickedRoadDown: false))
+    }
+
+    func testClaudeLeavesADeadServerForTheNextInOrder() {
+        XCTAssertEqual(RoadPolicy.selection(mode: .secure, picked: nil, alive: all.subtracting(["sg-hysteria2"]),
+                                            order: order, current: "sg-hysteria2"),
+                       RoadSelection(choice: "sg-reality", claude: "sg-reality", pickedRoadDown: false))
+        XCTAssertEqual(RoadPolicy.selection(mode: .secure, picked: nil, alive: ["us-reality", "us-hysteria2"],
+                                            order: order, current: "sg-reality"),
+                       RoadSelection(choice: "us-reality", claude: "us-reality", pickedRoadDown: false))
+    }
+
+    func testAForgottenServerIsIgnored() {
+        XCTAssertEqual(RoadPolicy.selection(mode: .secure, picked: nil, alive: all, order: order, current: "deleted-road"),
+                       RoadSelection(choice: "sg-reality", claude: "sg-reality", pickedRoadDown: false))
+    }
+
     func testNothingAliveMeansNoSelection() {
         for mode in [RoadMode.secure, .fast, .manual] {
             XCTAssertNil(RoadPolicy.selection(mode: mode, picked: "sg-reality", alive: [], order: order))

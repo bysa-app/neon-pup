@@ -24,6 +24,62 @@ final class ConfigTemplateTests: XCTestCase {
         XCTAssertEqual(ConfigTemplate.tags(count: 3), ["road-1", "road-2", "road-3"])
     }
 
+    /// SFM runs the engine inside Apple's NetworkExtension (2026-10-10): macOS owns the tunnel and its DNS, so
+    /// the profile leaves the tunnel to it, fetches the China lists through Claude's roads (SFM can't read
+    /// Neon Pup's bundle) and keeps Neon Pup's control port. Everything else is the same config.
+    func testSFMProfileLeavesTheTunnelToMacOS() throws {
+        let sfm = RuntimeOptions(resourcesPath: "", apiPort: 47321, apiSecret: "s", platform: .sfm)
+        let root = try XCTUnwrap(JSONSerialization.jsonObject(with: ConfigTemplate.build(roads: roads, options: sfm)) as? [String: Any])
+        let tun = try XCTUnwrap((root["inbounds"] as? [[String: Any]])?.first)
+        XCTAssertEqual(tun["type"] as? String, "tun")
+        XCTAssertNil(tun["interface_name"], "macOS names the interface")
+        // Measured 2026-10-10: without auto_route NetworkExtension gets no routes; the default stack can't bind.
+        XCTAssertEqual(tun["auto_route"] as? Bool, true)
+        XCTAssertEqual(tun["stack"] as? String, "gvisor")
+        let route = try XCTUnwrap(root["route"] as? [String: Any])
+        let sets = try XCTUnwrap(route["rule_set"] as? [[String: Any]])
+        XCTAssertEqual(sets.map { $0["type"] as? String }, ["remote", "remote"])
+        // sing-box 1.14: download_detour is deprecated (SFM shows a warning popup); http_client.detour replaces it.
+        XCTAssertTrue(sets.allSatisfy { $0["download_detour"] == nil })
+        XCTAssertEqual(Set(sets.compactMap { ($0["http_client"] as? [String: Any])?["detour"] as? String }), ["claude"])
+        XCTAssertTrue(sets.allSatisfy { ($0["url"] as? String)?.hasPrefix("https://") == true })
+        let exp = try XCTUnwrap(root["experimental"] as? [String: Any])
+        XCTAssertEqual((exp["clash_api"] as? [String: Any])?["external_controller"] as? String, "127.0.0.1:47321")
+        XCTAssertEqual((exp["cache_file"] as? [String: Any])?["enabled"] as? Bool, true)
+        // Claude's pin is unchanged.
+        XCTAssertEqual(outbound(root, "claude")?["outbounds"] as? [String], ["road-1", "road-2", "road-3"])
+    }
+
+    /// Neon Pup proves SFM runs the current server list: the profile carries a fingerprint outbound that the
+    /// control API lists. Same servers, same fingerprint; any change, a new one.
+    func testProfileCarriesAServerListFingerprint() throws {
+        let sfm = RuntimeOptions(resourcesPath: "", apiPort: 47321, apiSecret: "s", platform: .sfm)
+        let root = try XCTUnwrap(JSONSerialization.jsonObject(with: ConfigTemplate.build(roads: roads, options: sfm)) as? [String: Any])
+        let print = ConfigTemplate.fingerprintTag(roads: roads)
+        XCTAssertTrue(print.hasPrefix("np-"))
+        XCTAssertNotNil(outbound(root, print))
+        XCTAssertEqual(print, ConfigTemplate.fingerprintTag(roads: roads))
+        XCTAssertNotEqual(print, ConfigTemplate.fingerprintTag(roads: Array(roads.reversed())))
+        var renamed = roads; renamed[0].name = "Other name"
+        XCTAssertNotEqual(print, ConfigTemplate.fingerprintTag(roads: renamed), "names show in the panel too")
+    }
+
+    /// "Tunnel Chinese sites too" is a live switch (engine mode), not a new profile: China lists send traffic and
+    /// lookups direct only in the normal mode; in "Global" everything but the hotel window goes to the servers.
+    func testChinaRulesOnlyApplyInTheNormalMode() throws {
+        let root = try built()
+        let route = try XCTUnwrap(root["route"] as? [String: Any])
+        let rules = try XCTUnwrap(route["rules"] as? [[String: Any]])
+        let china = rules.filter { ($0["rule_set"] as? String)?.hasSuffix("-cn") == true }
+        XCTAssertEqual(china.count, 2)
+        XCTAssertTrue(china.allSatisfy { $0["clash_mode"] as? String == "Rule" })
+        let dnsRules = try XCTUnwrap((root["dns"] as? [String: Any])?["rules"] as? [[String: Any]])
+        let chinaDNS = try XCTUnwrap(dnsRules.first { $0["rule_set"] as? String == "geosite-cn" })
+        XCTAssertEqual(chinaDNS["clash_mode"] as? String, "Rule")
+        // Claude stays first, before the hotel and China exceptions.
+        XCTAssertEqual(rules.firstIndex { ($0["outbound"] as? String) == "claude" }, 2)
+    }
+
     func testRoadOutbounds() throws {
         let root = try built()
         let r = try XCTUnwrap(outbound(root, "road-1"))

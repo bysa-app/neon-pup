@@ -55,11 +55,41 @@ final class FakeHelper: HelperControlling {
     }
     var log = ""
     func recentLog() async -> String { log }
+    var hotelExpiries: [(seconds: Int, mode: String)] = []
+    /// false = the helper refuses to arm (unreachable).
+    var armWorks = true
+    var hotelCancels = 0
+    func armHotelExpiry(seconds: Int, apiPort: Int, secret: String, mode: String) async -> Bool {
+        hotelExpiries.append((seconds, mode)); return armWorks
+    }
+    func cancelHotelExpiry() async { hotelCancels += 1 }
+    var chinaModeSent: [Bool] = []
+    /// Non-nil: the helper can't be reached when China mode is sent.
+    var chinaModeError: String?
+    /// Runs once inside the next setChinaMode call (a tap while it is in flight).
+    var duringChinaMode: (@MainActor () async -> Void)?
+    func setChinaMode(_ on: Bool) async -> String? {
+        if let hook = duringChinaMode { duringChinaMode = nil; await hook() }
+        if let chinaModeError { return chinaModeError }
+        chinaModeSent.append(on); return nil
+    }
+    /// Go offline (China mode on SFM): Wi-Fi off, tunnel untouched.
+    var offlineCalls = 0
+    var isOffline = false
+    var offlineError: String?
+    func goOffline() async -> String? {
+        offlineCalls += 1
+        if let offlineError { return offlineError }
+        isOffline = true; return nil
+    }
     var killSwitchError: String?
+    /// Like SFMHost: the switch-off fails, but only while no tunnel runs (connected = nothing to do).
+    var killSwitchErrorWhenStopped: String?
     var duringKillSwitch: (@MainActor () async -> Void)?
     func setKillSwitch(_ on: Bool) async -> String? {
         calls.append(on ? "killSwitch(on)" : "killSwitch(off)")
         if on, let hook = duringKillSwitch { duringKillSwitch = nil; await hook() }
+        if on, !running, let killSwitchErrorWhenStopped { return killSwitchErrorWhenStopped }
         return on ? killSwitchError : nil
     }
 }
@@ -77,9 +107,24 @@ final class FakeEngine: EngineControlling, @unchecked Sendable {
     func delay(of name: String) async -> Int? {
         if let hook = duringDelay { duringDelay = nil; await hook() }
         if failNext { failNext = false; return nil }
+        // Like the real engine at start: "choice" points at server 1, so it answers only if server 1 does.
+        if name == "choice", !choiceAnswers { return delays["road-1"] }
         if name == "choice" || name == "auto" { return delays[name] ?? delays.values.first }
         return delays[name]
     }
+    /// Outbound names the running config has; nil = every name is known.
+    var known: Set<String>?
+    /// true: the control API doesn't answer the fingerprint question (timeout, wrong secret).
+    var fingerprintUnknown = false
+    func knows(_ name: String) async -> Bool? {
+        if fingerprintUnknown { return nil }
+        return known.map { $0.contains(name) } ?? true
+    }
+    /// The mode the engine reports; nil = the last one set.
+    var reportedMode: String?
+    /// true: the control API doesn't say which mode runs.
+    var modeUnreadable = false
+    func currentMode() async -> String? { modeUnreadable ? nil : (reportedMode ?? modes.last) }
     /// Engine modes set ("Rule" normally, "Direct" during the hotel login window), in order.
     var modes: [String] = []
     /// Modes the engine refuses to switch to (a failed API call).
@@ -89,7 +134,12 @@ final class FakeEngine: EngineControlling, @unchecked Sendable {
         modes.append(mode); return true
     }
 
+    /// false: "choice" answers only when server 1 does (the real engine before the first switch).
+    var choiceAnswers = true
+    /// The engine refuses selector changes (a failed API call).
+    var refuseSelect = false
     func select(_ name: String, in group: String) async -> Bool {
+        if refuseSelect { return false }
         if group == "claude" { claudeSelected.append(name) } else { selected.append(name) }
         return true
     }

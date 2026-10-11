@@ -35,6 +35,21 @@ public struct EngineAPI: EngineControlling {
         return delay
     }
 
+    public func knows(_ name: String) async -> Bool? {
+        guard let (_, response) = try? await session.data(for: request("proxies/\(name)")),
+              let code = (response as? HTTPURLResponse)?.statusCode else { return nil }
+        if code == 200 { return true }
+        if code == 404 { return false }
+        return nil
+    }
+
+    public func currentMode() async -> String? {
+        guard let (data, response) = try? await session.data(for: request("configs")),
+              (response as? HTTPURLResponse)?.statusCode == 200,
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        return json["mode"] as? String
+    }
+
     public func setMode(_ mode: String) async -> Bool {
         let body = try? JSONSerialization.data(withJSONObject: ["mode": mode])
         guard let (_, response) = try? await session.data(for: request("configs", method: "PATCH", body: body)),

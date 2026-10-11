@@ -31,18 +31,22 @@ public struct PanelView: View {
             if model.chinaMode && model.phase == .off {
                 StatusLine(text: "China mode is on: no internet until you wake me up")
             }
-            if model.phase == .trouble(.needsApproval) {
+            // One link at most (the maintainer 2026-10-12).
+            switch model.panelLink {
+            case .openApproval?:
                 TextLink(title: "Open System Settings") { SMAppService.openSystemSettingsLoginItems() }
-            }
-            if model.phase == .trouble(.noRoads) {
+            case .addServers?:
                 TextLink(title: "Add my servers") { RoadsWindow.show(model: model) }
-            }
-            if model.phase == .failed {
-                // In China mode napping keeps everything blocked, so don't promise normal internet.
-                TextLink(title: model.chinaMode ? "Stop trying for now" : "Back to normal internet") { Task { await model.nap() } }
-            }
-            if AppStateMachine.showsHotelLogin(model.phase, chinaMode: model.chinaMode) {
+            case .continueSetup?:
+                TextLink(title: "Continue setup") { SetupWizardWindow.showFromPanel() }
+            case .openSFM?:
+                TextLink(title: "Open SFM") { SFMBridge().openApp() }
+            case .nap(let title)?:
+                TextLink(title: title) { Task { await model.nap() } }
+            case .hotelLogin?:
                 TextLink(title: "Securely open public Wi-Fi login") { Task { await model.startHotelLogin() } }
+            case nil:
+                EmptyView()
             }
             ModeToggle(mode: model.mode) { newMode in
                 Task {
@@ -62,6 +66,8 @@ public struct PanelView: View {
                 }
             }
             FooterBar(startsAtLogin: startsAtLogin, chinaMode: model.chinaMode,
+                      tunnelChinaSites: model.tunnelChinaSites,
+                      toggleTunnelChinaSites: { Task { await model.setTunnelChinaSites(!model.tunnelChinaSites) } },
                       help: { GuideWindow.show(copyReport: { await model.helpReport(appVersion: appVersion) }) }, toggleLogin: toggleLogin,
                       toggleChinaMode: { Task { await model.setChinaMode(!model.chinaMode) } },
                       showGuide: { GuideWindow.show(copyReport: { await model.helpReport(appVersion: appVersion) }) }, showRoads: { RoadsWindow.show(model: model) }, quit: quit)

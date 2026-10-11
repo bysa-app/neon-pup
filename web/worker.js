@@ -117,8 +117,8 @@ const PAGE = `<!doctype html>
   <h2>Set it up</h2>
   <div class="card"><ol>
     <li>Open the zip and drag Neon Pup into Applications.</li>
-    <li>Open Neon Pup. Paste the links for your own server (<code>vless://</code> or <code>hysteria2://</code>), then press Save my servers.</li>
-    <li>Click the butterfly in the menu bar and press Wake me up. The first time, your Mac asks you to allow Neon Pup once.</li>
+    <li>Open Neon Pup. A setup window walks you through everything, one step at a time: it installs SFM, the free app that carries the connection, and adds your server links (<code>vless://</code> or <code>hysteria2://</code>). About 5 minutes, before you travel.</li>
+    <li>Click the butterfly in the menu bar and press Wake me up.</li>
   </ol></div>
 
   <h2>What it does</h2>

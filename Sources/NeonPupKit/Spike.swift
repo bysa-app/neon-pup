@@ -35,10 +35,34 @@ public enum Spike {
             await helper.restoreTimeZone()
             print("STOPPED")
             return 0
+        case "uninstall-helper":
+            print(helper.uninstall())
+            return 0
         case "reinstall":
             // Unregistering ends the running helper; registering again lets launchd start the new binary.
             print(helper.reinstall())
             return 0
+        case "export-profile":
+            // SFM test (2026-10-10): the same config Neon Pup builds, in the form SFM runs, owner-only files.
+            guard let path = args.dropFirst().first else { print("usage: --spike export-profile <file>"); return 64 }
+            let roads = KeychainRoadStore().load()
+            guard !roads.isEmpty else { print("NO SERVERS: add your servers in the app first"); return 1 }
+            let secret = UUID().uuidString
+            let options = RuntimeOptions(resourcesPath: "", apiPort: 47321, apiSecret: secret, platform: .sfm)
+            do {
+                let data = try ConfigTemplate.build(roads: roads, options: options)
+                let access = try JSONSerialization.data(withJSONObject: ["port": 47321, "secret": secret])
+                for (file, body) in [(path, data), (path + ".access.json", access)] {
+                    try? FileManager.default.removeItem(atPath: file)
+                    guard FileManager.default.createFile(atPath: file, contents: body, attributes: [.posixPermissions: 0o600]) else {
+                        print("could not write \(file)"); return 1
+                    }
+                }
+                print("profile with \(roads.count) servers written to \(path)")
+                return 0
+            } catch {
+                print("could not build: \(error)"); return 1
+            }
         case "import-roads":
             // Maintenance: same as "Import from file..." + "Save my roads" in the app.
             guard let path = args.dropFirst().first, let text = try? String(contentsOfFile: path, encoding: .utf8) else {
